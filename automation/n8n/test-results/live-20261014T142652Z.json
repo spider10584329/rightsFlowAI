@@ -1,0 +1,50 @@
+{
+  "timestamp": "20261014T142652Z",
+  "api": "http://127.0.0.1:8000",
+  "passed": 6,
+  "failed": 1,
+  "checks": [
+    {
+      "check": "Automation key created for test org (shown once)",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Statement uploaded by a user in the app",
+      "ok": true,
+      "detail": "HTTP 201",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Org B key resolves to org B only",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Org B key cannot read org A statement",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Org B key cannot remind on org A contract",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Automation key rejected on the human (JWT) API",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "setup-n8n-automation.ps1 imported credential and workflows",
+      "ok": false,
+      "detail": "exit 1",
+      "verified_with": "real-local"
+    }
+  ]
+}

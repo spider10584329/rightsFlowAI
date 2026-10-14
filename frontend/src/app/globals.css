@@ -1,0 +1,334 @@
+@import "tailwindcss";
+
+/*
+ * RightsFlow design tokens.
+ *
+ * Semantic CSS variables are defined for the light theme on :root and
+ * overridden for dark mode. The inline theme script in the root layout sets
+ * `data-theme="light|dark"` on <html> before first paint; the media query
+ * covers visitors with JavaScript disabled.
+ */
+
+:root {
+  color-scheme: light;
+
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #f1f3f9;
+  --surface-3: #e7eaf3;
+  --overlay: rgb(15 18 34 / 0.45);
+
+  --border: #e2e5ee;
+  --border-strong: #cdd2de;
+
+  --fg: #0f1222;
+  --fg-muted: #474f66;
+  --fg-subtle: #646c82;
+
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-fg: #ffffff;
+  --primary-soft: #eef0ff;
+  --primary-soft-fg: #3730a3;
+
+  --accent: #0f766e;
+  --accent-soft: #e3f6f3;
+  --accent-soft-fg: #115e59;
+
+  --success: #15803d;
+  --success-soft: #e7f6ec;
+  --success-soft-fg: #166534;
+
+  --warning: #b45309;
+  --warning-soft: #fdf3e1;
+  --warning-soft-fg: #92400e;
+
+  --danger: #c81e1e;
+  --danger-solid: #dc2626;
+  --danger-solid-hover: #b91c1c;
+  --danger-soft: #fdecec;
+  --danger-soft-fg: #b91c1c;
+
+  --info: #0369a1;
+  --info-soft: #e6f2fb;
+  --info-soft-fg: #075985;
+
+  --ring: #6366f1;
+  --ring-offset: #ffffff;
+
+  --shadow-color: 222 47% 11%;
+  --sidebar: #fbfbfe;
+  --hero-glow: rgb(99 102 241 / 0.18);
+  --hero-glow-2: rgb(20 184 166 / 0.14);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0a0c15;
+  --surface: #11141f;
+  --surface-2: #171b29;
+  --surface-3: #1f2436;
+  --overlay: rgb(3 4 10 / 0.7);
+
+  --border: #242a3d;
+  --border-strong: #353d57;
+
+  --fg: #e9ebf4;
+  --fg-muted: #b0b6ca;
+  --fg-subtle: #8f97ae;
+
+  --primary: #8f95fb;
+  --primary-hover: #a7acfc;
+  --primary-fg: #0a0c15;
+  --primary-soft: #1d2145;
+  --primary-soft-fg: #c9ccff;
+
+  --accent: #2dd4bf;
+  --accent-soft: #0e2a29;
+  --accent-soft-fg: #7ae8d9;
+
+  --success: #4ade80;
+  --success-soft: #0e2a1a;
+  --success-soft-fg: #8cefb0;
+
+  --warning: #fbbf24;
+  --warning-soft: #2d230b;
+  --warning-soft-fg: #fcd34d;
+
+  --danger: #f87171;
+  --danger-solid: #dc2626;
+  --danger-solid-hover: #ef4444;
+  --danger-soft: #301417;
+  --danger-soft-fg: #fca5a5;
+
+  --info: #38bdf8;
+  --info-soft: #0b2433;
+  --info-soft-fg: #7dd3fc;
+
+  --ring: #a5b4fc;
+  --ring-offset: #0a0c15;
+
+  --shadow-color: 230 50% 2%;
+  --sidebar: #0d1019;
+  --hero-glow: rgb(129 140 248 / 0.22);
+  --hero-glow-2: rgb(45 212 191 / 0.12);
+}
+
+/* No-JS fallback: follow the OS preference until the theme script runs. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #0a0c15;
+    --surface: #11141f;
+    --surface-2: #171b29;
+    --surface-3: #1f2436;
+    --overlay: rgb(3 4 10 / 0.7);
+    --border: #242a3d;
+    --border-strong: #353d57;
+    --fg: #e9ebf4;
+    --fg-muted: #b0b6ca;
+    --fg-subtle: #8f97ae;
+    --primary: #8f95fb;
+    --primary-hover: #a7acfc;
+    --primary-fg: #0a0c15;
+    --primary-soft: #1d2145;
+    --primary-soft-fg: #c9ccff;
+    --accent: #2dd4bf;
+    --accent-soft: #0e2a29;
+    --accent-soft-fg: #7ae8d9;
+    --success: #4ade80;
+    --success-soft: #0e2a1a;
+    --success-soft-fg: #8cefb0;
+    --warning: #fbbf24;
+    --warning-soft: #2d230b;
+    --warning-soft-fg: #fcd34d;
+    --danger: #f87171;
+    --danger-solid: #dc2626;
+    --danger-solid-hover: #ef4444;
+    --danger-soft: #301417;
+    --danger-soft-fg: #fca5a5;
+    --info: #38bdf8;
+    --info-soft: #0b2433;
+    --info-soft-fg: #7dd3fc;
+    --ring: #a5b4fc;
+    --ring-offset: #0a0c15;
+    --shadow-color: 230 50% 2%;
+    --sidebar: #0d1019;
+    --hero-glow: rgb(129 140 248 / 0.22);
+    --hero-glow-2: rgb(45 212 191 / 0.12);
+  }
+}
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-overlay: var(--overlay);
+  --color-sidebar: var(--sidebar);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-fg: var(--primary-soft-fg);
+
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-fg: var(--accent-soft-fg);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-soft-fg: var(--success-soft-fg);
+
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-soft-fg: var(--warning-soft-fg);
+
+  --color-danger: var(--danger);
+  --color-danger-solid: var(--danger-solid);
+  --color-danger-solid-hover: var(--danger-solid-hover);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-soft-fg: var(--danger-soft-fg);
+
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-soft-fg: var(--info-soft-fg);
+
+  --color-ring: var(--ring);
+  --color-ring-offset: var(--ring-offset);
+
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.375rem;
+
+  --shadow-xs: 0 1px 2px 0 hsl(var(--shadow-color) / 0.06);
+  --shadow-sm: 0 1px 2px 0 hsl(var(--shadow-color) / 0.06), 0 1px 3px 0 hsl(var(--shadow-color) / 0.08);
+  --shadow-md: 0 2px 4px -1px hsl(var(--shadow-color) / 0.06), 0 6px 16px -4px hsl(var(--shadow-color) / 0.12);
+  --shadow-lg: 0 4px 8px -2px hsl(var(--shadow-color) / 0.08), 0 16px 40px -8px hsl(var(--shadow-color) / 0.2);
+  --shadow-ring: 0 0 0 1px hsl(var(--shadow-color) / 0.06);
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-scale-in: scale-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-in-left: slide-in-left 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97) translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+  @keyframes slide-in-left {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes shimmer {
+    0% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.55;
+    }
+  }
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    background: var(--primary-soft);
+    color: var(--primary-soft-fg);
+  }
+
+  /* Visible, consistent focus ring for keyboard users. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  [data-radix-popper-content-wrapper] {
+    z-index: 60 !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, var(--border) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+}

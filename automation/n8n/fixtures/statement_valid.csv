@@ -1,0 +1,5 @@
+Store,Artist,Title,ISRC,Country of Sale,Quantity,Earnings (USD),Sale Month
+Spotify,Nova E2E,Midnight Drive E2E,USE2E2600001,US,1000,100.00,PERIOD
+Spotify,Nova E2E,Night Bus E2E,USE2E2600002,GB,500,50.00,PERIOD
+Spotify,Unknown,Mystery Song,ZZE2E2600009,FR,7,3.33,PERIOD
+Spotify,Nova E2E,Broken Row,USE2E2600001,US,1,not-a-number,PERIOD

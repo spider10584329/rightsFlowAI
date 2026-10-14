@@ -1,0 +1,551 @@
+{
+  "id": "RfWfHealthCheck1",
+  "name": "RightsFlow - E. Automation health check",
+  "active": false,
+  "nodes": [
+    {
+      "id": "a22a4ff7-b8fd-53a1-bd3e-03a23cb20cb0",
+      "name": "Run now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c13881f4-5ed4-5715-a6dd-7e6c133908f2",
+      "name": "Every hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "89ea5af5-1336-5efa-bf33-0d773371147f",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Non-secret settings. The API key is in the \"RightsFlow automation key\" credential.\nconst triggeredBySchedule = $('Every hour').isExecuted;\nconst settings = {\n  apiBaseUrl: '__RIGHTSFLOW_API_URL__',\n  instanceId: '__RIGHTSFLOW_INSTANCE_ID__',\n  workflow: 'automation-health',\n  trigger: triggeredBySchedule ? 'schedule' : 'manual',\n  executionId: String($execution.id),\n};\nsettings.n8nHealthUrl = '__RIGHTSFLOW_N8N_URL__/healthz';\nreturn [{ json: settings }];"
+      }
+    },
+    {
+      "id": "b05dc71e-59be-5ff6-93d6-6be00cfd9e78",
+      "name": "Check n8n",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.n8nHealthUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ef4349d1-872b-59c0-833a-f617d2da8020",
+      "name": "Check API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/health",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "a643c7fa-a367-5752-bd13-b82319355573",
+      "name": "Check automation API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/health",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "be6986fe-990b-5970-9a54-f296808a86a5",
+      "name": "Diagnose",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Availability and readiness only: this does not prove business workflows produce correct results.\nconst n8n = $('Check n8n').first().json;\nconst api = $('Check API').first().json;\nconst auto = $('Check automation API').first().json;\nconst body = auto.body || {};\nconst rank = { healthy: 0, warning: 1, critical: 2 };\nconst checks = [];\nconst add = (check, severity, detail) => checks.push({ check, severity, ok: severity === 'healthy', detail });\nadd('n8n', n8n.statusCode === 200 ? 'healthy' : 'critical', n8n.statusCode ? `HTTP ${n8n.statusCode}` : 'unreachable');\nadd('FastAPI', api.statusCode === 200 ? 'healthy' : 'critical', api.statusCode ? `HTTP ${api.statusCode}` : 'unreachable');\nif (auto.statusCode === 401 || auto.statusCode === 403) {\n  add('Automation key', 'critical', `rejected (HTTP ${auto.statusCode}: ${body.error?.code || 'unauthorized'}): the key is expired, revoked or invalid. Create or rotate it in Settings > Automation, then run scripts\\setup-n8n-automation.ps1`);\n} else if (auto.statusCode === 409) {\n  add('Automation key', 'critical', `bound to another n8n instance (${body.error?.code}): see docs/N8N_TROUBLESHOOTING.md`);\n} else if (auto.statusCode !== 200) {\n  add('Automation API', 'critical', auto.statusCode ? `HTTP ${auto.statusCode}` : 'unreachable');\n} else {\n  const cred = body.credential || {};\n  const level = cred.expiry_level === 'critical' ? 'critical' : cred.expiry_level === 'warning' ? 'warning' : 'healthy';\n  add('Automation key', level, cred.days_until_expiry == null ? 'no expiry' : `expires in ${cred.days_until_expiry} day(s)`);\n  for (const issue of body.issues || []) {\n    if (issue.code === 'credential_expiring') continue;  // reported above\n    add(issue.code, issue.severity, issue.message);\n  }\n  if (!(body.issues || []).length) add('Database, outbox, runs, incidents', 'healthy', `database ${body.database?.latency_ms} ms`);\n}\nlet overall = 'healthy';\nfor (const c of checks) if (rank[c.severity] > rank[overall]) overall = c.severity;\nconst problems = checks.filter((c) => !c.ok);\nreturn [{ json: {\n  overall, checks,\n  problemCodes: problems.map((c) => c.check).sort(),\n  canRecord: auto.statusCode === 200,\n  report: checks.map((c) => `${c.severity.toUpperCase().padEnd(8)} ${c.check}: ${c.detail}`).join('\\n'),\n  status: overall === 'healthy' ? 'succeeded' : 'partial',\n  summary: { overall, problems: problems.map((c) => c.check), checks },\n} }];"
+      }
+    },
+    {
+      "id": "c256d68c-568e-590b-8d9d-f1787b510da5",
+      "name": "API reachable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f0fa22d3-d7b4-5c8b-9c42-c657ab85c8bd",
+              "leftValue": "={{ $json.canRecord }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "a0230320-0ef0-5ace-a6f1-80ce50a318f9",
+      "name": "Start run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:run-start-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: $('Config').first().json.workflow, trigger_type: $('Config').first().json.trigger, execution_id: $('Config').first().json.executionId }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "8b8c5d64-0359-5cfe-ab52-7902ba46cab7",
+      "name": "Finish run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/runs/{{ $('Start run').first().json.id }}/finish",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:run-finish-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $('Diagnose').first().json.status, summary: $('Diagnose').first().json.summary }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "1055474b-b8e8-54c5-91ac-d55dac80cd3a",
+      "name": "Problems found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2160,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a56f2159-bead-58d7-b2b4-9eefcb233ca9",
+              "leftValue": "={{ $('Diagnose').first().json.overall !== 'healthy' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "c43d4079-008f-5742-ae93-5e1e3855506b",
+      "name": "Alert admins",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/alerts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:health-alert-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: 'automation-health', execution_id: String($execution.id), run_id: $('Start run').first().json.id, error_code: 'health_' + $('Diagnose').first().json.overall, resource: $('Diagnose').first().json.problemCodes.join('+').slice(0, 120), error_message: $('Diagnose').first().json.report }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "06fe2673-46a1-5729-9610-48848972a154",
+      "name": "Fail loudly",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        450
+      ],
+      "parameters": {
+        "jsCode": "// The API can't be reached or refuses the key: nothing can be recorded there, so\n// fail this execution (visible in n8n > Executions and to the error workflow).\n// scripts\\check-n8n.ps1 gives the same diagnosis locally.\nthrow new Error('Automation health CRITICAL:\\n' + $('Diagnose').first().json.report);"
+      }
+    }
+  ],
+  "connections": {
+    "Run now": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every hour": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Check n8n",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check n8n": {
+      "main": [
+        [
+          {
+            "node": "Check API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check API": {
+      "main": [
+        [
+          {
+            "node": "Check automation API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check automation API": {
+      "main": [
+        [
+          {
+            "node": "Diagnose",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Diagnose": {
+      "main": [
+        [
+          {
+            "node": "API reachable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API reachable?": {
+      "main": [
+        [
+          {
+            "node": "Start run",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fail loudly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start run": {
+      "main": [
+        [
+          {
+            "node": "Finish run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finish run": {
+      "main": [
+        [
+          {
+            "node": "Problems found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Problems found?": {
+      "main": [
+        [
+          {
+            "node": "Alert admins",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "UTC",
+    "errorWorkflow": "RfWfErrorHandler"
+  },
+  "pinData": {},
+  "meta": {
+    "rightsflow": {
+      "workflow": "automation-health",
+      "description": "Hourly: n8n, the API, the database, the automation key (expiry levels), the outbox, runs and incidents. Healthy / warning / critical; alerts admins per issue set and fails loudly when it cannot reach or authenticate to the API.",
+      "generated_by": "automation/n8n/build_workflows.py"
+    }
+  },
+  "tags": []
+}

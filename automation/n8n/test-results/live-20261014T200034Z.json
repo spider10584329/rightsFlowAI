@@ -1,0 +1,346 @@
+{
+  "timestamp": "20261014T200034Z",
+  "api": "http://127.0.0.1:8000",
+  "n8n_test_home": "C:\\Users\\Administrator\\AppData\\Local\\RightsFlowAI\\n8n-test",
+  "n8n_port": 5688,
+  "passed": 54,
+  "failed": 2,
+  "checks": [
+    {
+      "check": "Automation keys created for both test organizations (shown once)",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Statement uploaded by a user in the app",
+      "ok": true,
+      "detail": "HTTP 201",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Org B key resolves to org B only",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Org B key cannot read org A statement",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Automation key rejected on the human (JWT) API",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "setup-n8n-automation.ps1 -Mode test configured the test instance",
+      "ok": true,
+      "detail": "exit 0",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Test instance records its organization and test mode (no secret in the file)",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Test n8n server running on 127.0.0.1:5688",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Key is bound to the test instance",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A second instance using the same key is refused (409 instance_conflict)",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "E. health workflow executed and recorded 'healthy'",
+      "ok": true,
+      "detail": "{\"overall\": \"healthy\", \"problems\": [], \"checks\": [{\"check\": \"n8n\", \"severity\": \"healthy\", \"ok\": true, \"detail\": \"HTTP 200\"}, {\"check\": \"FastAPI\", \"severity\": \"healthy\", \"ok\": true, \"detail\": \"HTTP 200",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. royalty-import executed",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. CSV and XLSX inbox statements imported",
+      "ok": true,
+      "detail": "[{\"statement_id\": \"d599709c-abf1-4657-bf05-ecec5e9c6a4f\", \"origin\": \"inbox\", \"http_status\": 200, \"automation\": \"started\", \"attempts\": 1, \"needs_review\": true, \"review_task\": \"created\", \"error\": null}, {\"statement_id\": \"832214c0-744c-4282-8129-ad3100b4465a\", \"origin\": \"inbox\", \"http_status\": 200, \"au",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. app upload is NOT processed before its mapping is confirmed (awaiting_mapping)",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. app upload still 'uploaded'",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. bad name, garbage and legacy .xls files rejected with an explicit reason",
+      "ok": true,
+      "detail": "[{\"file\": \"distributor__Garbage__2026-09.csv\", \"http_status\": 422, \"code\": \"validation_failed\", \"seen_before\": false}, {\"file\": \"distributor__Legacy Excel__2026-09.xls\", \"http_status\": 422, \"code\": \"unsupported_file_type\", \"seen_before\": false}, {\"file\": \"random-export.csv\", \"http_status\": 422, \"code\": \"validation_failed\", \"seen_before\": false}]",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. every inbox file has a recorded outcome",
+      "ok": true,
+      "detail": "['imported', 'imported', 'rejected', 'rejected', 'rejected']",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. XLSX amounts kept exact (1234.5678 and 0.42)",
+      "ok": true,
+      "detail": "['0.42000000', '1234.56780000']",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. missing contract terms held for review, not paid",
+      "ok": true,
+      "detail": "['no_applicable_contract_term']",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. no royalty run posted by automation",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. ledger untouched",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Owner confirmed the app upload's column mapping",
+      "ok": true,
+      "detail": "{\"id\":\"b94461c6-d819-45da-83e2-65013cfd2247\",\"organization_id\":\"e52cce81-3582-4248-8471-c8e21edacd5b\",\"source_name\":\"E2E App Upload\",\"source_category\":\"streaming\",\"default_rights_type\":null,\"period_st",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. statement.ready event processed the confirmed app upload",
+      "ok": true,
+      "detail": "status calculated",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. re-run: inbox files recognised as already imported, rejections not re-raised",
+      "ok": true,
+      "detail": "[{\"file\": \"distributor__Garbage__2026-09.csv\", \"http_status\": 422, \"code\": \"validation_failed\", \"seen_before\": true}, {\"file\": \"distributor__Legacy Excel__2026-09.xls\", \"http_status\": 422, \"code\": \"unsupported_file_type\", \"seen_before\": true}, {\"file\": \"random-export.csv\", \"http_status\": 422, \"code\"",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. re-runs created no new statements",
+      "ok": true,
+      "detail": "3",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. third run sent no further notifications",
+      "ok": true,
+      "detail": "6 -> 7 (the confirmed upload's review may notify once)",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. transient failure scheduled for retry with backoff (no alert yet)",
+      "ok": true,
+      "detail": "{\"statement_id\": \"832214c0-744c-4282-8129-ad3100b4465a\", \"source\": \"inbox\", \"state\": \"retry_waiting\", \"attempts\": 1, \"max_attempts\": 3, \"next_attempt_at\": \"2026-10-14T20:17:42\", \"error_category\": \"tra",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. due retry reprocessed the same statement (no duplicate import)",
+      "ok": true,
+      "detail": "{\"statement_id\": \"832214c0-744c-4282-8129-ad3100b4465a\", \"source\": \"inbox\", \"state\": \"completed\", \"attempts\": 2, \"max_attempts\": 3, \"next_attempt_at\": null, \"error_category\": \"transient\", \"last_error\"",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "B. reminders for 7-day, 30-day and expired contracts (not the 200-day one)",
+      "ok": true,
+      "detail": "[{\"contract_id\": \"68fff671-605b-431f-892e-c1471975bf89\", \"threshold_days\": 0, \"outcome\": \"sent\", \"recipients\": 1}, {\"contract_id\": \"3654f999-54f4-4c68-84b2-cdf0117761eb\", \"threshold_days\": 7, \"outcome\": \"sent\", \"recipients\": 1}, {\"contract_id\": \"aba3dea8-6775-494c-abeb-60f7c706fc3d\", \"threshold_days",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "B. re-run sends no duplicate reminders",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "C. new works/recordings, requested review and conflicts handled",
+      "ok": true,
+      "detail": "{\"subjects\": 7, \"suggested\": 0, \"explained\": 0, \"ai_unavailable\": 7, \"errors\": 0}",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "C. AI provider not configured: degraded gracefully, nothing applied",
+      "ok": true,
+      "detail": "real provider NOT verified (no credentials)",
+      "verified_with": "not-verified (no AI credentials)"
+    },
+    {
+      "check": "C. conflict left open for a person",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "D. report generated from app data and delivered to admins/owner",
+      "ok": true,
+      "detail": "{\"period\": \"2026-09\", \"report_type\": \"revenue_by_source\", \"delivery_status\": \"sent\", \"duplicate\": false, \"recipients\": 1, \"job_id\": \"c1544f5c-10ff-487b-b1bd-39b6c93acb12\"}",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "D. same month is not generated or delivered again",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "E. expiring key reported as warning (not healthy)",
+      "ok": true,
+      "detail": "{\"overall\": \"warning\", \"problems\": [\"Automation key\"], \"checks\": [{\"check\": \"n8n\", \"severity\": \"healthy\", \"ok\": true, \"detail\": \"HTTP 200\"}, {\"check\": \"FastAPI\", \"severity\": \"healthy\", \"ok\": true, \"detail\": \"HTTP 200\"}, {\"check\": \"Automation key\", \"s",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "E. one health incident opened and admins alerted",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "E. repeated warning suppressed (same incident, no second alert)",
+      "ok": false,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "E. healthy again: incident resolved with a recovery notice",
+      "ok": false,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Simulated worker claimed an event and 'crashed' (no ack)",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Expired lease re-claimed by the next run and completed",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Probe workflows imported into the test instance",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Schedule fired inside the n8n server (mode=trigger, success)",
+      "ok": true,
+      "detail": "[('RfTestFailProbe', 'trigger', 'error', 2), ('RfTestSchedProbe', 'trigger', 'success', 2), ('RfWfErrorHandler', 'error', 'success', 2)]",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Scheduled run recorded via the API with trigger_type=schedule",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Error workflow executed by the server for the failing probe (mode=error, success)",
+      "ok": true,
+      "detail": "[('RfTestFailProbe', 'trigger', 'error', 2), ('RfTestSchedProbe', 'trigger', 'success', 2), ('RfWfErrorHandler', 'error', 'success', 2)]",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Repeated identical failures -> one incident, one alert, repeats suppressed",
+      "ok": true,
+      "detail": "{\"occurrences\": 2, \"alerts_sent\": 1, \"suppressed\": 1, \"category\": \"workflow_error\"}",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Workflows re-imported against an unreachable API",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "E. health fails loudly (non-zero) and reports CRITICAL/unreachable",
+      "ok": true,
+      "detail": "dministrator\\AppData\\Local\\RightsFlowAI\\n8n\\runtime\\node_modules\\n8n-core\\src\\execution-engine\\workflow-execute.ts:2377:27\n    at C:\\Users\\Administrator\\AppData\\Local\\RightsFlowAI\\n8n\\runtime\\node_modules\\n8n-core\\src\\execution-engine\\workflow-execute.ts:2858:11\nAutomation health CRITICAL: [line 4]\n",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. royalty-import fails cleanly while the API is unreachable",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Workflows restored with the real API URL",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. royalty-import succeeds again once the API is reachable",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Switching the instance to another organization is refused without -AllowOrganizationChange",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Explicit organization change accepted",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "B. nothing-due branch completes with 0 contracts",
+      "ok": true,
+      "detail": "{\"contracts\": 0}",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Operational n8n instance untouched (credential, key file, active workflows, connection)",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Test keys revoked (API rejects them)",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    }
+  ]
+}

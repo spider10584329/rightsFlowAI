@@ -1,0 +1,18 @@
+# RightsFlow AI backend — runtime dependencies (pinned, verified on Python 3.13)
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+SQLAlchemy==2.1.4
+alembic==1.20.0
+PyMySQL==1.2.3
+pydantic==2.14.1
+pydantic-settings==2.15.0
+email-validator==2.3.0
+PyJWT==2.15.1
+pwdlib[argon2]==0.3.1
+python-dotenv==1.2.4
+python-multipart==0.0.32
+openpyxl==3.1.5
+defusedxml==0.7.1
+pypdf==6.20.1
+httpx==0.28.1
+anthropic==1.13.0

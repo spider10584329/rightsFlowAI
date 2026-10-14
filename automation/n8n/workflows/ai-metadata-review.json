@@ -1,0 +1,499 @@
+{
+  "id": "RfWfAiReview0001",
+  "name": "RightsFlow - C. AI metadata and rights review",
+  "active": false,
+  "nodes": [
+    {
+      "id": "f85e287a-fc4c-5fd6-854c-7329ebaac5b7",
+      "name": "Run now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "36b86ed8-36e7-5834-9257-e81ebebfce29",
+      "name": "Every 30 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c06243aa-79fd-5fc0-a69f-122caeba7830",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Non-secret settings. The API key is in the \"RightsFlow automation key\" credential.\nconst triggeredBySchedule = $('Every 30 minutes').isExecuted;\nconst settings = {\n  apiBaseUrl: '__RIGHTSFLOW_API_URL__',\n  instanceId: '__RIGHTSFLOW_INSTANCE_ID__',\n  workflow: 'ai-metadata-review',\n  trigger: triggeredBySchedule ? 'schedule' : 'manual',\n  executionId: String($execution.id),\n};\n\nreturn [{ json: settings }];"
+      }
+    },
+    {
+      "id": "3633e3aa-cf85-559b-a477-94b652946da2",
+      "name": "Start run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:run-start-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: $('Config').first().json.workflow, trigger_type: $('Config').first().json.trigger, execution_id: $('Config').first().json.executionId }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "73cfdb51-a1cc-5952-9043-15668e068e33",
+      "name": "Claim review events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/events/claim",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event_types: ['work.created', 'recording.created', 'review.requested', 'rights_conflict.opened'], limit: 10, lease_seconds: 600 }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "873bcb2f-dd2e-51d4-989a-e034c3dc9a5e",
+      "name": "Collect subjects",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const claim = $input.first().json;\nconst subjects = [];\nfor (const event of claim.events || []) {\n  const p = event.payload || {};\n  let subject = null;\n  if (event.event_type === 'rights_conflict.opened') subject = { subject_type: 'rights_conflict', subject_id: p.conflict_id };\n  else if (event.event_type === 'review.requested') subject = { subject_type: p.subject_type, subject_id: p.subject_id };\n  else subject = { subject_type: p.entity_type, subject_id: p.entity_id };\n  subjects.push({ hasWork: true, ...subject, event_id: event.id, event_type: event.event_type,\n                  lease_token: claim.lease_token });\n}\nif (!subjects.length) return [{ json: { hasWork: false } }];\nreturn subjects.map((s) => ({ json: s }));"
+      }
+    },
+    {
+      "id": "2e89fc39-48f8-59a7-90a3-e451286e2b02",
+      "name": "Anything to review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "76a6bce9-5114-50ec-97da-d0f04a0dea84",
+              "leftValue": "={{ $json.hasWork }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "f0e3c420-dff1-5392-9157-e631966c2b84",
+      "name": "AI review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/ai/review",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:ai-review-{{ $execution.id }}-{{ $json.event_id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          },
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 500
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ subject_type: $json.subject_type, subject_id: $json.subject_id, event_id: $json.event_id, lease_token: $json.lease_token, run_id: $('Start run').first().json.id }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "d6fdb44f-7833-5ec9-9828-92c1b76cdaa9",
+      "name": "Record human decisions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/ai/sync-decisions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:ai-sync-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ '{}' }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "executeOnce": true
+    },
+    {
+      "id": "e85f79f7-ec14-52e1-9f6d-7ca878887673",
+      "name": "Summarize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const reviewed = $('AI review').isExecuted ? $('AI review').all().map((item) => {\n  const body = item.json.body || {};\n  return { subject_type: body.subject_type, subject_id: body.subject_id, http_status: item.json.statusCode,\n           outcome: item.json.statusCode < 300 ? body.outcome : (body.error?.code || `http_${item.json.statusCode}`),\n           suggestions: (body.suggestion_ids || []).length };\n}) : [];\nconst sync = $('Record human decisions').first().json;\nconst errors = reviewed.filter((r) => r.http_status >= 300 || r.outcome === 'ai_error');\nconst count = (o) => reviewed.filter((r) => r.outcome === o).length;\nreturn [{ json: {\n  status: errors.length ? 'partial' : 'succeeded',\n  summary: { subjects: reviewed.length, suggested: count('suggested'), explained: count('explained'),\n             ai_unavailable: count('ai_unavailable'), errors: errors.length,\n             decisions_recorded: (sync.resolved || []).length, awaiting_decision: sync.still_waiting || 0,\n             reviewed },\n} }];"
+      }
+    },
+    {
+      "id": "b495cd26-9363-5ae2-b0fa-8bff30f59bae",
+      "name": "Finish run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/runs/{{ $('Start run').first().json.id }}/finish",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:run-finish-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status || 'succeeded', summary: $json.summary || {} }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Run now": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 30 minutes": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Start run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start run": {
+      "main": [
+        [
+          {
+            "node": "Claim review events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim review events": {
+      "main": [
+        [
+          {
+            "node": "Collect subjects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect subjects": {
+      "main": [
+        [
+          {
+            "node": "Anything to review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything to review?": {
+      "main": [
+        [
+          {
+            "node": "AI review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record human decisions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI review": {
+      "main": [
+        [
+          {
+            "node": "Record human decisions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record human decisions": {
+      "main": [
+        [
+          {
+            "node": "Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize": {
+      "main": [
+        [
+          {
+            "node": "Finish run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "UTC",
+    "errorWorkflow": "RfWfErrorHandler"
+  },
+  "pinData": {},
+  "meta": {
+    "rightsflow": {
+      "workflow": "ai-metadata-review",
+      "description": "Reviews new works/recordings, requested reviews and high-severity rights conflicts with the app's AI layer. Results are pending suggestions or advisory review tasks; people decide.",
+      "generated_by": "automation/n8n/build_workflows.py"
+    }
+  },
+  "tags": []
+}

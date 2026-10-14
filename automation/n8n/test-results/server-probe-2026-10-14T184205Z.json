@@ -1,0 +1,47 @@
+{
+  "started_utc": "2026-10-14 18:42:05",
+  "n8n_executions": [
+    [
+      "RfDiagFailProbe",
+      "trigger",
+      "error",
+      2
+    ],
+    [
+      "RfDiagSchedProbe",
+      "trigger",
+      "success",
+      2
+    ],
+    [
+      "RfWfErrorHandler",
+      "error",
+      "success",
+      2
+    ]
+  ],
+  "runs": [
+    [
+      "diag-schedule-probe",
+      "schedule",
+      "succeeded",
+      "{\"trigger\": \"schedule\", \"execution\": \"53\"}"
+    ],
+    [
+      "diag-schedule-probe",
+      "schedule",
+      "succeeded",
+      "{\"trigger\": \"schedule\", \"execution\": \"56\"}"
+    ]
+  ],
+  "alerts": [
+    [
+      "Automation 'rf-diag-failing-probe-temporary' failed",
+      "2026-10-14 18:44:21"
+    ],
+    [
+      "Automation 'rf-diag-failing-probe-temporary' failed",
+      "2026-10-14 18:43:21"
+    ]
+  ]
+}

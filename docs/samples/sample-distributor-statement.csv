@@ -1,0 +1,6 @@
+Store,Artist,Title,ISRC,UPC,Country of Sale,Quantity,Earnings (USD),Sale Month
+Spotify,Sample Artist,Sample Song One,QZSAM2600001,,US,12000,48.00,2026-03
+Spotify,Sample Artist,Sample Song One,QZSAM2600001,,GB,3500,12.25,2026-03
+Apple Music,Sample Artist,Sample Song One,QZSAM2600001,,DE,900,5.40,2026-03
+YouTube Music,Sample Artist,Sample Song Two,QZSAM2600002,,BR,22000,6.60,2026-03
+Amazon,Sample Artist,Unknown Track,QZSAM2600099,,FR,40,0.16,2026-03

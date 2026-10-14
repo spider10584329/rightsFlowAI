@@ -1,0 +1,272 @@
+{
+  "timestamp": "20261014T182829Z",
+  "api": "http://127.0.0.1:8000",
+  "passed": 43,
+  "failed": 1,
+  "checks": [
+    {
+      "check": "Automation key created for test org (shown once)",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Statement uploaded by a user in the app",
+      "ok": true,
+      "detail": "HTTP 201",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Org B key resolves to org B only",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Org B key cannot read org A statement",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Org B key cannot remind on org A contract",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Automation key rejected on the human (JWT) API",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "setup-n8n-automation.ps1 imported credential and workflows",
+      "ok": true,
+      "detail": "exit 0",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "n8n editor reachable on http://localhost:5678",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "E. health workflow executed",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "E. health run recorded via the API",
+      "ok": true,
+      "detail": "\"healthy\"",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. royalty-import workflow executed",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. run recorded with summary",
+      "ok": true,
+      "detail": "{\"statements\": 2, \"from_inbox\": 1, \"from_events\": 1, \"needing_review\": 2, \"rejected_files\": 2}",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. inbox statement and app-uploaded statement both processed",
+      "ok": true,
+      "detail": "[{\"statement_id\": \"7c6eae07-0f20-44d3-b2be-f3bd09250a92\", \"origin\": \"inbox\", \"http_status\": 200, \"needs_review\": true, \"review_task\": \"created\", \"error\": null}, {\"statement_id\": \"9a4f07fd-6f69-493b-a4f7-cf531b5bd87c\", \"origin\": \"event\", \"http_status\": 200, \"needs_review\": true, \"review_task\": \"created\", \"error\": null}]",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. malformed and badly named files rejected and reported",
+      "ok": true,
+      "detail": "[{\"file\": \"distributor__Garbage__2026-09.csv\", \"http_status\": 422, \"code\": \"validation_failed\"}, {\"file\": \"random-export.csv\", \"http_status\": 422, \"code\": \"validation_failed\"}]",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. statements processed (none posted)",
+      "ok": true,
+      "detail": "E2E Distro=calculated, E2E App Upload=calculated",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. review task raised for unmatched/held lines",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. missing contract terms held for review, not paid",
+      "ok": true,
+      "detail": "['no_applicable_contract_term']",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. no royalty run was posted by automation",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. ledger untouched (no balances)",
+      "ok": true,
+      "detail": "[]",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. statement.uploaded event completed via the outbox",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. re-run: inbox file recognised as already imported (no duplicate statement)",
+      "ok": true,
+      "detail": "[{\"statement_id\": \"7c6eae07-0f20-44d3-b2be-f3bd09250a92\", \"origin\": \"inbox_duplicate\", \"http_status\": 200, \"needs_review\": true, \"review_task\": \"unchanged\", \"error\": null}]",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. re-run created no new statements",
+      "ok": true,
+      "detail": "2",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. re-run sent no duplicate notifications",
+      "ok": true,
+      "detail": "3 -> 3",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "B. contract-expiration workflow executed",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "B. reminders sent for 7-day, 30-day and expired contracts (not the 200-day one)",
+      "ok": true,
+      "detail": "[{\"contract_id\": \"c8c5b135-e778-4602-b0cc-b7f8b9944713\", \"threshold_days\": 0, \"outcome\": \"sent\", \"recipients\": 1}, {\"contract_id\": \"ce683c89-c519-4214-80e9-c3414b73fbf7\", \"threshold_days\": 7, \"outcome\": \"sent\", \"recipients\": 1}, {\"contract_id\": \"96ed052a-ad0a-4c54-ab8b-203917a93fdb\", \"threshold_days\": 30, \"outcome\": \"sent\", \"recipients\": 1}]",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "B. re-run sends no duplicate reminders",
+      "ok": true,
+      "detail": "{\"sent\": 0, \"duplicates\": 3}",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "C. ai-metadata-review workflow executed",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "C. events for new works/recordings, requested review and conflict handled",
+      "ok": true,
+      "detail": "{\"subjects\": 7, \"suggested\": 0, \"explained\": 0, \"ai_unavailable\": 7, \"errors\": 0}",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "C. AI provider not configured: workflow degraded gracefully (no AI output stored)",
+      "ok": true,
+      "detail": "real provider NOT verified (no credentials)",
+      "verified_with": "not-verified (no AI credentials)"
+    },
+    {
+      "check": "C. rights conflict raised as an advisory review task",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "C. conflict left open for a person to resolve",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "D. monthly-reporting workflow executed",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "D. report generated from app data and delivered to admins/owner",
+      "ok": true,
+      "detail": "{\"period\": \"2026-09\", \"report_type\": \"revenue_by_source\", \"delivery_status\": \"sent\", \"duplicate\": false, \"recipients\": 1, \"job_id\": \"3eb7c7f0-5141-4b36-94a5-cc66c18c9bea\"}",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "D. owner notified with a link, no figures in the message",
+      "ok": true,
+      "detail": "Monthly royalty report ready: revenue by source, 2026-09",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "D. re-run for the same month does not generate or deliver again",
+      "ok": true,
+      "detail": "runs 1 -> 1",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Simulated worker claimed an event and 'crashed' (no ack)",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Expired lease re-claimed by the next run and completed",
+      "ok": true,
+      "detail": "{\"status\": \"completed\", \"attempts\": 2}",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Workflows re-imported against an unreachable API",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "E. health workflow completes and reports the API as unreachable",
+      "ok": true,
+      "detail": "urce\": \"cli\",\n        \"triggerNode\": {\n          \"name\": \"Run now\",\n          \"type\": \"n8n-nodes-base.manualTrigger\"\n        }\n      }\n    },\n    \"resumeToken\": \"7e82859f28ca979beae5b930c4cd98e17543589aca705385e42b5e576b5afcdf\"\n  },\n  \"mode\": \"cli\",\n  \"startedAt\": \"2026-10-14T18:35:03.272Z\",\n  \"stoppedAt\": \"2026-10-14T18:35:06.046Z\",\n  \"storedAt\": \"db\",\n  \"status\": \"success\",\n  \"finished\": true\n}\n",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. royalty-import fails cleanly while the API is unreachable (execution marked failed)",
+      "ok": true,
+      "detail": "exit 1",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Error workflow ran automatically and alerted the admin (owner)",
+      "ok": false,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Workflows restored with the real API URL",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "A. royalty-import succeeds again once the API is reachable",
+      "ok": true,
+      "detail": "",
+      "verified_with": "real-local"
+    },
+    {
+      "check": "Health endpoint reports outbox and run state",
+      "ok": true,
+      "detail": "{\"status\": \"degraded\", \"problems\": [\"credential_expiring_soon\"]}",
+      "verified_with": "real-local"
+    }
+  ]
+}

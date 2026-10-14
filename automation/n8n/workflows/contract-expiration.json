@@ -1,0 +1,439 @@
+{
+  "id": "RfWfContractExpr",
+  "name": "RightsFlow - B. Contract expiration reminders",
+  "active": false,
+  "nodes": [
+    {
+      "id": "58459906-f27d-5b10-b557-938faea905ee",
+      "name": "Run now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "538c873b-4a5d-5d19-a6bb-0d2fc5a5ad64",
+      "name": "Daily 07:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "9b912805-c9d6-54f1-825d-ecbb6ea8393f",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Non-secret settings. The API key is in the \"RightsFlow automation key\" credential.\nconst triggeredBySchedule = $('Daily 07:00 UTC').isExecuted;\nconst settings = {\n  apiBaseUrl: '__RIGHTSFLOW_API_URL__',\n  instanceId: '__RIGHTSFLOW_INSTANCE_ID__',\n  workflow: 'contract-expiration',\n  trigger: triggeredBySchedule ? 'schedule' : 'manual',\n  executionId: String($execution.id),\n};\nsettings.thresholds = [30, 14, 7]; // days before end date\nreturn [{ json: settings }];"
+      }
+    },
+    {
+      "id": "552d81b1-f873-519e-9b96-012c72654ba9",
+      "name": "Start run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:run-start-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: $('Config').first().json.workflow, trigger_type: $('Config').first().json.trigger, execution_id: $('Config').first().json.executionId }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "2803ad7f-e674-5e0a-a09f-a0ebe2948ad4",
+      "name": "List expiring contracts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/contracts/expiring",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "within_days",
+              "value": "={{ Math.max(...$('Config').first().json.thresholds) }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "7f08314b-fe51-574c-bdcf-4e6d6dc74e65",
+      "name": "Plan reminders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Pick the tightest threshold each contract has reached (0 = already expired).\nconst thresholds = [...$('Config').first().json.thresholds].sort((a, b) => a - b);\nconst items = $('List expiring contracts').first().json.items || [];\nconst plan = [];\nfor (const c of items) {\n  const threshold = c.days_until_expiry < 0 ? 0 : thresholds.find((t) => c.days_until_expiry <= t);\n  if (threshold === undefined) continue;\n  plan.push({ hasWork: true, contract_id: c.contract_id, threshold_days: threshold,\n              days_until_expiry: c.days_until_expiry });\n}\nif (!plan.length) return [{ json: { hasWork: false, status: 'succeeded', summary: { contracts: 0 } } }];\nreturn plan.map((p) => ({ json: p }));"
+      }
+    },
+    {
+      "id": "46216bb6-42fb-5afe-84c6-fae95419729c",
+      "name": "Any reminders due?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "76a6bce9-5114-50ec-97da-d0f04a0dea84",
+              "leftValue": "={{ $json.hasWork }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "41c9173e-cb2b-5108-a118-2dafb1c414f2",
+      "name": "Send reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/contracts/{{ $json.contract_id }}/reminders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:reminder-{{ $execution.id }}-{{ $json.contract_id }}-{{ $json.threshold_days }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ threshold_days: $json.threshold_days, run_id: $('Start run').first().json.id }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "35f923da-d1d5-554c-bafd-b6fe3a3ccd62",
+      "name": "Summarize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const outcomes = $input.all().map((item, i) => {\n  const plan = $('Plan reminders').all()[i]?.json || {};\n  const body = item.json.body || {};\n  let outcome = body.duplicate ? 'duplicate' : body.status;\n  if (item.json.statusCode >= 300) outcome = body.error?.code || `http_${item.json.statusCode}`;\n  return { contract_id: plan.contract_id, threshold_days: plan.threshold_days, outcome,\n           recipients: body.recipient_count ?? 0 };\n});\nconst count = (o) => outcomes.filter((x) => x.outcome === o).length;\nconst errors = outcomes.filter((x) => !['sent', 'duplicate', 'skipped'].includes(x.outcome));\nreturn [{ json: {\n  status: errors.length ? 'partial' : 'succeeded',\n  summary: { contracts: outcomes.length, sent: count('sent'), duplicates: count('duplicate'),\n             skipped_no_recipients: count('skipped'), errors: errors.length, outcomes },\n} }];"
+      }
+    },
+    {
+      "id": "8f89fd66-2ca5-5751-bd87-7dda138a67be",
+      "name": "Finish run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/runs/{{ $('Start run').first().json.id }}/finish",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:run-finish-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status || 'succeeded', summary: $json.summary || {} }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Run now": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 07:00 UTC": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Start run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start run": {
+      "main": [
+        [
+          {
+            "node": "List expiring contracts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List expiring contracts": {
+      "main": [
+        [
+          {
+            "node": "Plan reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan reminders": {
+      "main": [
+        [
+          {
+            "node": "Any reminders due?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any reminders due?": {
+      "main": [
+        [
+          {
+            "node": "Send reminder",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finish run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send reminder": {
+      "main": [
+        [
+          {
+            "node": "Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize": {
+      "main": [
+        [
+          {
+            "node": "Finish run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "UTC",
+    "errorWorkflow": "RfWfErrorHandler"
+  },
+  "pinData": {},
+  "meta": {
+    "rightsflow": {
+      "workflow": "contract-expiration",
+      "description": "Daily: reminds managers about contracts expiring within 30/14/7 days or already expired. One reminder per contract, end date and threshold.",
+      "generated_by": "automation/n8n/build_workflows.py"
+    }
+  },
+  "tags": []
+}

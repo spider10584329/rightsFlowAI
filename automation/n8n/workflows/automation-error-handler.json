@@ -1,0 +1,121 @@
+{
+  "id": "RfWfErrorHandler",
+  "name": "RightsFlow - Automation error handler",
+  "active": false,
+  "nodes": [
+    {
+      "id": "338dd31c-5716-58fa-9ed2-10ff11490c28",
+      "name": "When a workflow fails",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "fe7374a4-2153-5914-800b-717ea14f5656",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { apiBaseUrl: '__RIGHTSFLOW_API_URL__', instanceId: '__RIGHTSFLOW_INSTANCE_ID__' } }];"
+      }
+    },
+    {
+      "id": "e602edce-e9e7-53a8-8ed2-ac6632d5a2cd",
+      "name": "Report failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/alerts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:error-{{ $('When a workflow fails').first().json.execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: ($('When a workflow fails').first().json.workflow.name || 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 100), execution_id: String($('When a workflow fails').first().json.execution.id), error_code: 'workflow_failed', resource: String($('When a workflow fails').first().json.execution.lastNodeExecuted || '').slice(0, 120) || null, error_message: ($('When a workflow fails').first().json.execution.lastNodeExecuted || '') + ': ' + ($('When a workflow fails').first().json.execution.error?.message || 'unknown error') }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "RfAutomationKey1",
+          "name": "RightsFlow automation key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "When a workflow fails": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Report failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "UTC"
+  },
+  "pinData": {},
+  "meta": {
+    "rightsflow": {
+      "workflow": "automation-error-handler",
+      "description": "Error workflow for the RightsFlow workflows: marks the run failed and alerts admins (once per failed execution).",
+      "generated_by": "automation/n8n/build_workflows.py"
+    }
+  },
+  "tags": []
+}

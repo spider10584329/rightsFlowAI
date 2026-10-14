@@ -1,0 +1,65 @@
+# Production-like local stack. Secrets come from .env files that are NOT committed.
+#   cp backend/.env.example backend/.env.docker   (then set JWT_SECRET_KEY etc.)
+#   docker compose up --build
+services:
+  db:
+    image: mariadb:10.11
+    environment:
+      MARIADB_DATABASE: rightsflow_ai
+      MARIADB_USER: rightsflow
+      MARIADB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      retries: 10
+
+  migrate:
+    build: ./backend
+    env_file: ./backend/.env.docker
+    environment:
+      DATABASE_URL: mysql+pymysql://rightsflow:${DB_PASSWORD}@db:3306/rightsflow_ai
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    build: ./backend
+    env_file: ./backend/.env.docker
+    environment:
+      DATABASE_URL: mysql+pymysql://rightsflow:${DB_PASSWORD}@db:3306/rightsflow_ai
+      RUN_EMBEDDED_WORKER: "false"
+    volumes:
+      - file-storage:/app/storage
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    # Not published: the API trusts X-Forwarded-For from its callers
+    # (--forwarded-allow-ips=*), which is only safe while the BFF (web) is the
+    # sole client on the private network (audit A-02).
+    expose: ["8000"]
+
+  worker:
+    build: ./backend
+    env_file: ./backend/.env.docker
+    environment:
+      DATABASE_URL: mysql+pymysql://rightsflow:${DB_PASSWORD}@db:3306/rightsflow_ai
+    command: ["python", "-m", "app.worker"]
+    volumes:
+      - file-storage:/app/storage
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    build: ./frontend
+    environment:
+      BACKEND_URL: http://api:8000
+      # Set to the number of reverse proxies in front of this container.
+      TRUSTED_PROXY_HOPS: "0"
+    depends_on: [api]
+    ports: ["3000:3000"]
+
+volumes:
+  db-data:
+  file-storage:
