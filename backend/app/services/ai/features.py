@@ -20,7 +20,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import and_, case, distinct, exists, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -305,6 +305,8 @@ def _connectivity(db: Session, organization_id: str) -> dict[str, Any]:
 
 
 class _ConnectionCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid")  # structured outputs require additionalProperties: false
+
     ok: bool
 
 

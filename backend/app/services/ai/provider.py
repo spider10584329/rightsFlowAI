@@ -231,13 +231,21 @@ class OpenAICompatibleProvider:
         self.model = settings.ai_model
         self.base_url = settings.ai_base_url.rstrip("/")
 
+    def _token_limit_param(self) -> str:
+        if settings.ai_token_limit_param != "auto":
+            return settings.ai_token_limit_param
+        from urllib.parse import urlparse
+
+        host = (urlparse(self.base_url).hostname or "").lower()
+        return "max_completion_tokens" if host == "api.openai.com" else "max_tokens"
+
     def generate_json(self, *, system, messages, schema, max_tokens) -> AIResult:
         import httpx
 
         started = time.perf_counter()
         payload = {
             "model": self.model,
-            "max_tokens": max_tokens,
+            self._token_limit_param(): max_tokens,
             "messages": [{"role": "system", "content": system}, *messages],
             "response_format": {
                 "type": "json_schema",
@@ -261,7 +269,11 @@ class OpenAICompatibleProvider:
                 body = response.json()
                 usage = body.get("usage") or {}
                 billed = (int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0)))
-                message = (body.get("choices") or [{}])[0].get("message") or {}
+                choice = (body.get("choices") or [{}])[0]
+                message = choice.get("message") or {}
+                if choice.get("finish_reason") == "length":
+                    # Reasoning tokens count against the limit too; the output may be empty.
+                    raise AIProviderError("The AI response was truncated", code="ai_truncated", usage=billed)
                 if message.get("refusal"):
                     raise AIProviderError("The AI model declined this request", code="ai_refused",
                                           usage=billed)

@@ -181,3 +181,81 @@ def test_connection_check_is_admin_only_and_tenant_scoped(client, team, fake_ai)
     other = client.get(url(team, "/status", org_id=team["other_org"]["id"]),
                        headers=team["outsider"]["headers"]).json()
     assert other["connectivity"]["state"] == "unverified"  # another org's success is not shared
+
+
+# --------------------------------------------------------------------------- OpenAI-compatible
+
+
+@pytest.fixture
+def openai_settings(monkeypatch):
+    monkeypatch.setattr(settings, "ai_provider", "openai_compatible")
+    monkeypatch.setattr(settings, "ai_api_key", "test-key-not-real")
+    monkeypatch.setattr(settings, "ai_model", "gpt-4o-mini")
+    monkeypatch.setattr(settings, "ai_base_url", "https://api.openai.com/v1")
+    monkeypatch.setattr(settings, "ai_token_limit_param", "auto")
+    monkeypatch.setattr(settings, "ai_max_retries", 0)
+    return settings
+
+
+def fake_openai(monkeypatch, status: int, body: dict) -> list[dict]:
+    import httpx as real_httpx  # the OpenAI-compatible provider uses plain httpx
+
+    sent: list[dict] = []
+
+    def post(url, *, json, headers, timeout):
+        sent.append({"url": url, "json": json, "headers": headers})
+        return real_httpx.Response(status, json=body, request=real_httpx.Request("POST", url))
+
+    monkeypatch.setattr(real_httpx, "post", post)
+    return sent
+
+
+def openai_ok(content: str, finish_reason: str = "stop") -> dict:
+    return {"model": "gpt-4o-mini", "usage": {"prompt_tokens": 7, "completion_tokens": 3},
+            "choices": [{"finish_reason": finish_reason, "message": {"content": content}}]}
+
+
+def test_openai_uses_max_completion_tokens_and_strict_schema(openai_settings, monkeypatch):
+    from app.services.ai.provider import OpenAICompatibleProvider
+
+    sent = fake_openai(monkeypatch, 200, openai_ok(json.dumps({"ok": True})))
+    result = OpenAICompatibleProvider().generate_json(
+        system="s", messages=[{"role": "user", "content": "hi"}], schema=SCHEMA, max_tokens=32)
+    assert result.data == {"ok": True} and result.provider == "openai_compatible"
+    payload = sent[0]["json"]
+    assert sent[0]["url"] == "https://api.openai.com/v1/chat/completions"
+    assert payload["max_completion_tokens"] == 32 and "max_tokens" not in payload
+    assert payload["response_format"]["json_schema"]["strict"] is True
+    assert payload["messages"][0] == {"role": "system", "content": "s"}
+
+
+def test_other_gateways_keep_max_tokens_unless_overridden(openai_settings, monkeypatch):
+    from app.services.ai.provider import OpenAICompatibleProvider
+
+    monkeypatch.setattr(settings, "ai_base_url", "http://127.0.0.1:11434/v1")
+    sent = fake_openai(monkeypatch, 200, openai_ok(json.dumps({"ok": True})))
+    OpenAICompatibleProvider().generate_json(system="s", messages=[], schema=SCHEMA, max_tokens=32)
+    assert sent[0]["json"]["max_tokens"] == 32
+    monkeypatch.setattr(settings, "ai_token_limit_param", "max_completion_tokens")
+    OpenAICompatibleProvider().generate_json(system="s", messages=[], schema=SCHEMA, max_tokens=32)
+    assert sent[1]["json"]["max_completion_tokens"] == 32
+
+
+@pytest.mark.parametrize(("status", "code"), [(401, "ai_auth_failed"), (404, "ai_model_unavailable"),
+                                              (429, "ai_rate_limited"), (400, "ai_invalid_request")])
+def test_openai_errors_are_classified(openai_settings, monkeypatch, status, code):
+    from app.services.ai.provider import OpenAICompatibleProvider
+
+    fake_openai(monkeypatch, status, {"error": {"message": f"secret detail {FAKE_SECRET}"}})
+    with pytest.raises(AIProviderError) as raised:
+        OpenAICompatibleProvider().generate_json(system="s", messages=[], schema=SCHEMA, max_tokens=32)
+    assert raised.value.code == code and FAKE_SECRET not in raised.value.message
+
+
+def test_openai_truncated_output_is_reported_as_truncated(openai_settings, monkeypatch):
+    from app.services.ai.provider import OpenAICompatibleProvider
+
+    fake_openai(monkeypatch, 200, openai_ok("", finish_reason="length"))
+    with pytest.raises(AIProviderError) as raised:
+        OpenAICompatibleProvider().generate_json(system="s", messages=[], schema=SCHEMA, max_tokens=32)
+    assert raised.value.code == "ai_truncated" and raised.value.usage == (7, 3)

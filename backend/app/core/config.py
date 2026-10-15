@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     # Anthropic: sent as anthropic-workspace-id. Required when the API key is not scoped
     # to a workspace; leave unset for workspace-scoped keys.
     ai_workspace_id: str | None = None
+    # openai_compatible: output-limit parameter name. "auto" uses max_completion_tokens for
+    # api.openai.com (max_tokens is deprecated there and rejected by reasoning models) and
+    # max_tokens for other gateways.
+    ai_token_limit_param: Literal["auto", "max_tokens", "max_completion_tokens"] = "auto"
     ai_timeout_seconds: float = 60.0
     ai_max_retries: int = 2
     ai_max_output_tokens: int = 8000
