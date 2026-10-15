@@ -40,10 +40,20 @@ class CredentialResponse(BaseModel):
     created_by_id: str | None
     created_at: datetime
     expiry_level: Literal["ok", "warning", "critical", "expired", "revoked"]
+    # Issued by RightsFlow for its own n8n (managed mode); never shown, rotated automatically.
+    managed: bool = False
     bound_instance: str | None
     instance_bound_at: datetime | None
     instance_last_seen_at: datetime | None
     instance_stale: bool
+
+
+class ManagedAutomationUpdate(_Strict):
+    """Switch a managed automation on/off and/or change its settings (merged
+    over the current ones; validated per automation)."""
+
+    enabled: bool | None = None
+    settings: dict[str, Any] | None = None
 
 
 class IssuedCredentialResponse(BaseModel):

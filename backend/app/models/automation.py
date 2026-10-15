@@ -9,6 +9,9 @@
 - ``automation_idempotency_keys``: stored responses for replayed requests.
 - ``automation_deliveries``: notification/report deliveries, deduplicated by key.
 - ``automation_review_tasks``: items an automation raised for human review.
+- ``automation_connections`` / ``organization_automations`` (managed mode): the
+  organization's link to the platform-operated n8n, and which automations are
+  switched on with what settings, plus what was provisioned for them in n8n.
 
 Nothing here holds money: payloads carry ids and counts, never amounts that
 would duplicate the ledger.
@@ -19,6 +22,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -66,6 +70,9 @@ class IntegrationCredential(UUIDPrimaryKeyMixin, TenantMixin, CreatedByMixin, Ti
     bound_instance_id: Mapped[str | None] = mapped_column(String(64))
     instance_bound_at: Mapped[datetime | None] = mapped_column(DateTime)
     instance_last_seen_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Issued by RightsFlow for the platform n8n (managed mode): never shown to
+    # anyone, rotated and revoked automatically.
+    managed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
 
 
 class AutomationEvent(UUIDPrimaryKeyMixin, TenantMixin, Base):
@@ -300,3 +307,61 @@ class AutomationInboxFile(UUIDPrimaryKeyMixin, TenantMixin, Base):
     times_seen: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, nullable=False)
+
+
+class AutomationConnection(UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin, Base):
+    """Managed mode: the organization's connection to the platform n8n.
+
+    Holds the ids of what RightsFlow created in n8n for the organization (the
+    credential carrying its automation key and the credential that authenticates
+    webhook triggers) and a lease that serializes reconciliation runs."""
+
+    __tablename__ = "automation_connections"
+    __table_args__ = (
+        CheckConstraint("status IN ('disabled', 'provisioning', 'active', 'error')",
+                        name="ck_automation_connection_status"),
+        UniqueConstraint("organization_id", name="uq_automation_connection_org"),
+    )
+
+    status: Mapped[str] = mapped_column(String(20), default="disabled", nullable=False)
+    credential_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("integration_credentials.id", ondelete="SET NULL",
+                               name="fk_automation_connection_credential")
+    )
+    n8n_credential_id: Mapped[str | None] = mapped_column(String(64))
+    n8n_trigger_credential_id: Mapped[str | None] = mapped_column(String(64))
+    # Fingerprint of the webhook trigger secret stored in n8n (the secret itself
+    # is derived from the server's key and never stored).
+    trigger_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    last_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime)
+    lease_token: Mapped[str | None] = mapped_column(String(64))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class OrganizationAutomation(UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin, Base):
+    """Managed mode: one automation (see app/services/automation/catalog.py) for
+    one organization: whether it is on, its settings, and the n8n workflow
+    provisioned for it."""
+
+    __tablename__ = "organization_automations"
+    __table_args__ = (
+        CheckConstraint("status IN ('disabled', 'pending', 'active', 'error')",
+                        name="ck_organization_automation_status"),
+        UniqueConstraint("organization_id", "automation", name="uq_organization_automation"),
+    )
+
+    automation: Mapped[str] = mapped_column(String(40), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    settings: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(20), default="disabled", nullable=False)
+    n8n_workflow_id: Mapped[str | None] = mapped_column(String(64))
+    template_version: Mapped[int | None] = mapped_column(Integer)
+    # Hash of the workflow last sent to n8n; a different hash means "update it".
+    config_hash: Mapped[str | None] = mapped_column(String(64))
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    provisioned_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime)
+    updated_by_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL", name="fk_organization_automation_updated_by")
+    )

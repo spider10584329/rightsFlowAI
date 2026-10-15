@@ -1,0 +1,511 @@
+{
+  "name": "RightsFlow [__RF_ORG_LABEL__] - D. Monthly royalty report",
+  "nodes": [
+    {
+      "id": "b638a367-7cf9-59a1-a384-9b458aac8b6f",
+      "name": "Run now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "a985bd0e-0a9a-5bca-8625-ee59a73d1ff1",
+      "name": "On schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "__RF_CRON__"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "383c56bd-06ae-5c0d-ad2f-f3d62c6384c3",
+      "name": "Run on request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "__RF_WEBHOOK_PATH__",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__RF_TRIGGER_CREDENTIAL_ID__",
+          "name": "__RF_TRIGGER_CREDENTIAL_NAME__"
+        }
+      },
+      "webhookId": "__RF_WEBHOOK_ID__"
+    },
+    {
+      "id": "fd3b37b3-198f-5ccb-aafb-f45186b2de0f",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Non-secret settings. The API key is in the organization's automation credential.\nconst triggeredBySchedule = $('On schedule').isExecuted;\nconst request = $('Run on request').isExecuted ? ($('Run on request').first().json.body || {}) : {};\nconst options = __RF_SETTINGS_JSON__;\nconst settings = {\n  apiBaseUrl: '__RF_API_URL__',\n  instanceId: '__RF_INSTANCE_ID__',\n  workflow: 'monthly-reporting',\n  trigger: triggeredBySchedule ? 'schedule' : (request.trigger === 'event' ? 'event' : 'manual'),\n  executionId: String($execution.id),\n};\n\nsettings.reportType = options.report_type;\nsettings.period = $now.setZone('UTC').minus({ months: 1 }).toFormat('yyyy-MM');  // last completed month\n\nreturn [{ json: settings }];"
+      }
+    },
+    {
+      "id": "0c6fe46e-6627-5dcf-a0b8-baac274153a0",
+      "name": "Start run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:run-start-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ workflow: $('Config').first().json.workflow, trigger_type: $('Config').first().json.trigger, execution_id: $('Config').first().json.executionId, idempotency_key: 'monthly:' + $('Config').first().json.reportType + ':' + $('Config').first().json.period }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__RF_API_CREDENTIAL_ID__",
+          "name": "__RF_API_CREDENTIAL_NAME__"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "f6166b90-929c-5330-ac8c-c8f6b66cdc9f",
+      "name": "Already delivered?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a14a5dbc-6c31-5a64-a4ef-14468fe194ab",
+              "leftValue": "={{ $json.replayed === true && $json.status === 'succeeded' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "03692dbb-2fa3-52bc-9acb-1989a0ac8336",
+      "name": "Nothing to do",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        960,
+        150
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c2d46252-abd5-5cfc-ac8d-0ab4dd728077",
+      "name": "Request report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/reports/monthly",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:report-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ period: $('Config').first().json.period, report_type: $('Config').first().json.reportType, run_id: $('Start run').first().json.id }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__RF_API_CREDENTIAL_ID__",
+          "name": "__RF_API_CREDENTIAL_NAME__"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "dd202377-d80c-5451-84fd-a1ff7e600050",
+      "name": "Wait for report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/jobs/{{ $json.job_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 75000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "wait_seconds",
+              "value": "50"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__RF_API_CREDENTIAL_ID__",
+          "name": "__RF_API_CREDENTIAL_NAME__"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "614f24b3-8b37-5838-b763-33dccaf67cfd",
+      "name": "Notify recipients",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/reports/deliveries/{{ $('Request report').first().json.id }}/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:report-send-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ '{}' }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__RF_API_CREDENTIAL_ID__",
+          "name": "__RF_API_CREDENTIAL_NAME__"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 10000
+    },
+    {
+      "id": "8d908cbb-ac1c-5fc7-9393-f1ea9c2d1daa",
+      "name": "Summarize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const delivery = $input.first().json;\nreturn [{ json: {\n  status: delivery.status === 'sent' || delivery.duplicate ? 'succeeded' : 'partial',\n  summary: { period: $('Config').first().json.period, report_type: $('Config').first().json.reportType,\n             delivery_status: delivery.status, duplicate: delivery.duplicate === true,\n             recipients: delivery.recipient_count, job_id: delivery.job_id },\n} }];"
+      }
+    },
+    {
+      "id": "375185f0-161d-5ff9-8f41-2d11853cc9cb",
+      "name": "Finish run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation/runs/{{ $('Start run').first().json.id }}/finish",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Correlation-ID",
+              "value": "=n8n-{{ $execution.id }}"
+            },
+            {
+              "name": "X-Automation-Instance",
+              "value": "={{ $('Config').first().json.instanceId }}"
+            },
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Config').first().json.instanceId }}:run-finish-{{ $execution.id }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.status || 'succeeded', summary: $json.summary || {} }) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__RF_API_CREDENTIAL_ID__",
+          "name": "__RF_API_CREDENTIAL_NAME__"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Run now": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On schedule": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run on request": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Start run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start run": {
+      "main": [
+        [
+          {
+            "node": "Already delivered?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already delivered?": {
+      "main": [
+        [
+          {
+            "node": "Nothing to do",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Request report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request report": {
+      "main": [
+        [
+          {
+            "node": "Wait for report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for report": {
+      "main": [
+        [
+          {
+            "node": "Notify recipients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify recipients": {
+      "main": [
+        [
+          {
+            "node": "Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize": {
+      "main": [
+        [
+          {
+            "node": "Finish run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "UTC",
+    "errorWorkflow": "__RF_ERROR_WORKFLOW_ID__"
+  },
+  "meta": {
+    "rightsflow": {
+      "workflow": "monthly-reporting",
+      "description": "Monthly: generates last month's report with the app's report job and notifies admins/owners. Once per report type and period.",
+      "template_version": 1,
+      "generated_by": "automation/n8n/build_workflows.py"
+    }
+  }
+}

@@ -3154,6 +3154,324 @@
         }
       }
     },
+    "/api/v1/organizations/{organization_id}/automation/managed": {
+      "get": {
+        "tags": [
+          "Automation admin"
+        ],
+        "summary": "Managed Overview",
+        "description": "Mode, connection status and every automation the organization can switch\non, with its settings, schedule, next and last run.",
+        "operationId": "managed_overview_api_v1_organizations__organization_id__automation_managed_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 36,
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{organization_id}/automation/managed/{automation}": {
+      "put": {
+        "tags": [
+          "Automation admin"
+        ],
+        "summary": "Update Managed Automation",
+        "description": "Switch an automation on or off and/or change its settings. RightsFlow\nsets it up in n8n in the background (status ``pending`` until then).",
+        "operationId": "update_managed_automation_api_v1_organizations__organization_id__automation_managed__automation__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "automation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Automation"
+            }
+          },
+          {
+            "name": "organization_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 36,
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagedAutomationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{organization_id}/automation/managed/{automation}/run": {
+      "post": {
+        "tags": [
+          "Automation admin"
+        ],
+        "summary": "Run Managed Automation",
+        "description": "Start an enabled automation now; its run appears in the run history.",
+        "operationId": "run_managed_automation_api_v1_organizations__organization_id__automation_managed__automation__run_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "automation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Automation"
+            }
+          },
+          {
+            "name": "organization_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 36,
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{organization_id}/automation/managed/disable-all": {
+      "post": {
+        "tags": [
+          "Automation admin"
+        ],
+        "summary": "Disable All Automations",
+        "operationId": "disable_all_automations_api_v1_organizations__organization_id__automation_managed_disable_all_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 36,
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{organization_id}/automation/managed/repair": {
+      "post": {
+        "tags": [
+          "Automation admin"
+        ],
+        "summary": "Repair Automation",
+        "description": "Check and repair everything RightsFlow set up in n8n now.",
+        "operationId": "repair_automation_api_v1_organizations__organization_id__automation_managed_repair_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 36,
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/{organization_id}/automation/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "Automation admin"
+        ],
+        "summary": "Run Detail",
+        "description": "A run with links to what it produced (statements, review tasks, notifications, report files).",
+        "operationId": "run_detail_api_v1_organizations__organization_id__automation_runs__run_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "organization_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 36,
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/organizations/{organization_id}/automation/scopes": {
       "get": {
         "tags": [
@@ -23421,6 +23739,11 @@
             ],
             "title": "Expiry Level"
           },
+          "managed": {
+            "type": "boolean",
+            "title": "Managed",
+            "default": false
+          },
           "bound_instance": {
             "anyOf": [
               {
@@ -24926,6 +25249,37 @@
         },
         "type": "object",
         "title": "LogoutRequest"
+      },
+      "ManagedAutomationUpdate": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ManagedAutomationUpdate",
+        "description": "Switch a managed automation on/off and/or change its settings (merged\nover the current ones; validated per automation)."
       },
       "ManualLine": {
         "properties": {

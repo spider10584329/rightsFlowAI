@@ -1,6 +1,7 @@
 """Human-facing administration of workflow automation (JWT auth).
 
-Admins manage automation credentials and inspect the outbox and run history;
+Admins switch managed automations on and off (managed mode), manage automation
+credentials (self-hosted mode) and inspect the outbox and run history;
 managers work the review queue and can request an automated review.
 """
 
@@ -10,6 +11,7 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.permissions import OrgAdmin, OrgManager, OrgViewer
 from app.db.session import get_db
 from app.models.automation import AutomationEvent, AutomationReviewTask, AutomationRun
@@ -19,14 +21,57 @@ from app.schemas.automation import (
     CredentialRevoke,
     CredentialRotate,
     IssuedCredentialResponse,
+    ManagedAutomationUpdate,
     ReviewRequestCreate,
     ReviewTaskClose,
 )
-from app.services.automation import credentials, events, operations, records
+from app.services.automation import credentials, events, managed, operations, records
 
 router = APIRouter(prefix="/organizations/{organization_id}/automation", tags=["Automation admin"])
 
 Limit = Annotated[int, Query(ge=1, le=200)]
+
+
+# --------------------------------------------------------------------------- managed automations
+
+
+@router.get("/managed")
+def managed_overview(ctx: OrgAdmin, db: Session = Depends(get_db)):
+    """Mode, connection status and every automation the organization can switch
+    on, with its settings, schedule, next and last run."""
+    return managed.overview(db, ctx.organization_id)
+
+
+@router.put("/managed/{automation}")
+def update_managed_automation(automation: str, payload: ManagedAutomationUpdate, ctx: OrgAdmin, request: Request,
+                              db: Session = Depends(get_db)):
+    """Switch an automation on or off and/or change its settings. RightsFlow
+    sets it up in n8n in the background (status ``pending`` until then)."""
+    return managed.update_automation(db, ctx, automation, enabled=payload.enabled, values=payload.settings,
+                                     request=request)
+
+
+@router.post("/managed/{automation}/run", status_code=status.HTTP_202_ACCEPTED)
+def run_managed_automation(automation: str, ctx: OrgAdmin, request: Request, db: Session = Depends(get_db)):
+    """Start an enabled automation now; its run appears in the run history."""
+    return managed.run_now(db, ctx, automation, request)
+
+
+@router.post("/managed/disable-all")
+def disable_all_automations(ctx: OrgAdmin, request: Request, db: Session = Depends(get_db)):
+    return managed.disable_all(db, ctx, request)
+
+
+@router.post("/managed/repair", status_code=status.HTTP_202_ACCEPTED)
+def repair_automation(ctx: OrgAdmin, request: Request, db: Session = Depends(get_db)):
+    """Check and repair everything RightsFlow set up in n8n now."""
+    return managed.repair(db, ctx, request)
+
+
+@router.get("/runs/{run_id}")
+def run_detail(run_id: str, ctx: OrgAdmin, db: Session = Depends(get_db)):
+    """A run with links to what it produced (statements, review tasks, notifications, report files)."""
+    return managed.run_detail(db, ctx.organization_id, run_id)
 
 
 @router.get("/scopes")
@@ -85,6 +130,7 @@ def overview(ctx: OrgAdmin, db: Session = Depends(get_db)):
         "open_incidents": records.open_incidents(db, ctx.organization_id),
         "open_review_tasks": len(open_tasks),
         "automation_enabled": events.automation_enabled(db, ctx.organization_id),
+        "mode": settings.automation_mode,
     }
 
 

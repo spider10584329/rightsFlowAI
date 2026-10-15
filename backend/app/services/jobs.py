@@ -42,6 +42,7 @@ HANDLER_MODULES = [
     "app.services.reports",
     "app.services.scheduled",
     "app.services.automation.maintenance",
+    "app.services.automation.provisioner",
 ]
 
 

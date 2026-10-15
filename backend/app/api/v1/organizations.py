@@ -167,6 +167,11 @@ def archive_organization(
     if not verify_password(payload.password, ctx.user.hashed_password):
         raise ValidationFailedError("Password is incorrect", code="invalid_password")
     ctx.organization.is_active = False
+    # Managed automation: remove the organization's workflows and keys from n8n.
+    from app.services.automation.provisioner import managed_mode, request_reconcile
+
+    if managed_mode():
+        request_reconcile(db, ctx.organization_id, commit=False)
     record_audit(
         db,
         action="organization.archived",

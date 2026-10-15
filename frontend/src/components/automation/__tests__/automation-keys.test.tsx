@@ -27,6 +27,7 @@ const credential: AutomationCredential = {
   instance_bound_at: null,
   instance_last_seen_at: null,
   instance_stale: false,
+  managed: false,
 };
 
 const boundCredential: AutomationCredential = {
@@ -210,5 +211,18 @@ describe("KeysPanel expiry and instance binding", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(releaseMutation.mutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("KeysPanel in managed mode (legacy keys)", () => {
+  it("lists only hand-made keys and offers nothing but revoking them", async () => {
+    credentialList = [credential, { ...credential, id: "cred-managed", name: "RightsFlow managed automation", managed: true }];
+    render(<KeysPanel orgId="org-1" legacy />);
+    expect(screen.getByText("Keys created by hand")).toBeInTheDocument();
+    expect(screen.queryByText("RightsFlow managed automation")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create key" })).not.toBeInTheDocument();
+    const menu = await openRowActions("n8n production");
+    expect(within(menu).queryByRole("menuitem", { name: "Rotate key" })).not.toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Revoke key" })).toBeInTheDocument();
   });
 });

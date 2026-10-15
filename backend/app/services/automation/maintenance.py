@@ -31,6 +31,8 @@ def notify_expiring_credentials(db: Session) -> int:
     now = utc_now()
     for credential in db.scalars(select(IntegrationCredential).where(
             IntegrationCredential.revoked_at.is_(None),
+            # Managed keys are replaced automatically before they expire.
+            IntegrationCredential.managed.is_(False),
             IntegrationCredential.expires_at.is_not(None),
             IntegrationCredential.expires_at > now - EXPIRED_NOTICE_WINDOW)).all():
         level, days_left = expiry_level(credential)

@@ -33,6 +33,7 @@ DB_PASSWORD=... DB_ROOT_PASSWORD=... docker compose up --build
 - `EMAIL_PROVIDER=smtp` plus the SMTP credentials.
 - `STORAGE_BACKEND=s3` plus the bucket and credentials; install `requirements-optional.txt`.
 - Optional: `AI_PROVIDER` / `AI_API_KEY`, `BILLING_PROVIDER=stripe` with `STRIPE_*` keys and plan price ids, `ERROR_MONITORING_DSN`.
+- Optional automation (n8n): `AUTOMATION_MODE=managed` (the default), `N8N_API_URL`, `N8N_API_KEY` and `AUTOMATION_API_URL`. The platform n8n runs on the internal network next to the API; organizations then switch automations on in Settings → Automation. See [N8N_MANAGED_MODE.md](N8N_MANAGED_MODE.md).
 
 **Frontend environment**
 

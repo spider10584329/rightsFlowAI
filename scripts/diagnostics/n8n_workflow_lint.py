@@ -10,6 +10,11 @@ Read-only. Checks, per workflow:
   accepted by the request schema (schemas use extra="forbid"); credential
   reference is the expected one; mutating automation calls send Idempotency-Key;
 - trigger nodes present (manual + schedule) and the error workflow setting.
+
+Without an argument it checks both the self-hosted exports
+(automation/n8n/workflows) and the managed-mode templates
+(backend/app/services/automation/n8n_templates), which use ``__RF_*__``
+placeholders and also have an authenticated "Run on request" webhook.
 Exit code 1 when any ERROR is found.
 """
 
@@ -23,9 +28,14 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from app.main import app  # noqa: E402
 
-WORKFLOWS = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "automation" / "n8n" / "workflows"
+WORKFLOW_DIRS = [Path(sys.argv[1])] if len(sys.argv) > 1 else [
+    ROOT / "automation" / "n8n" / "workflows",
+    ROOT / "backend" / "app" / "services" / "automation" / "n8n_templates",
+]
 EXPECTED_CREDENTIAL = {"id": "RfAutomationKey1", "name": "RightsFlow automation key"}
-TRIGGERS = {"n8n-nodes-base.manualTrigger", "n8n-nodes-base.scheduleTrigger", "n8n-nodes-base.errorTrigger"}
+MANAGED_CREDENTIAL = {"id": "__RF_API_CREDENTIAL_ID__", "name": "__RF_API_CREDENTIAL_NAME__"}
+TRIGGERS = {"n8n-nodes-base.manualTrigger", "n8n-nodes-base.scheduleTrigger", "n8n-nodes-base.errorTrigger",
+            "n8n-nodes-base.webhook"}
 
 schema = app.openapi()
 components = schema.get("components", {}).get("schemas", {})
@@ -78,13 +88,15 @@ def body_keys(expr: str) -> list[str] | None:
     return keys
 
 
-for path in sorted(WORKFLOWS.glob("*.json")):
-    wf = path.name
+for path in sorted(p for directory in WORKFLOW_DIRS for p in directory.glob("*.json")):
+    wf = f"{path.parent.name}/{path.name}"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         err(wf, f"invalid JSON: {exc}")
         continue
+    managed = "__RF_" in path.read_text(encoding="utf-8")
+    expected_credential = MANAGED_CREDENTIAL if managed else EXPECTED_CREDENTIAL
     nodes = {n["name"]: n for n in data["nodes"]}
     if len(nodes) != len(data["nodes"]):
         err(wf, "duplicate node names")
@@ -116,10 +128,16 @@ for path in sorted(WORKFLOWS.glob("*.json")):
             err(wf, "no manual trigger (local testing needs one)")
         if "n8n-nodes-base.scheduleTrigger" not in types:
             err(wf, "no schedule trigger")
-        if data.get("settings", {}).get("errorWorkflow") != "RfWfErrorHandler":
-            err(wf, "error workflow not set to RfWfErrorHandler")
+        expected_error_workflow = "__RF_ERROR_WORKFLOW_ID__" if managed else "RfWfErrorHandler"
+        if data.get("settings", {}).get("errorWorkflow") != expected_error_workflow:
+            err(wf, f"error workflow not set to {expected_error_workflow}")
+        if managed:
+            hooks = [v for v in nodes.values() if v["type"] == "n8n-nodes-base.webhook"]
+            if len(hooks) != 1 or hooks[0]["parameters"].get("authentication") != "headerAuth":
+                err(wf, "managed workflows need one header-authenticated 'Run on request' webhook")
     config_node = nodes.get("Config")
-    if config_node is None or "__RIGHTSFLOW_INSTANCE_ID__" not in config_node["parameters"].get("jsCode", "")             and "instanceId" not in config_node["parameters"].get("jsCode", ""):
+    if config_node is None or ("__RIGHTSFLOW_INSTANCE_ID__" not in config_node["parameters"].get("jsCode", "")
+                               and "__RF_INSTANCE_ID__" not in config_node["parameters"].get("jsCode", ""))             and "instanceId" not in config_node["parameters"].get("jsCode", ""):
         err(wf, "Config node must define instanceId (placeholder __RIGHTSFLOW_INSTANCE_ID__)")
     text = json.dumps(data)
     for ref in set(re.findall(r"\$\('([^']+)'\)", text)):
@@ -144,7 +162,7 @@ for path in sorted(WORKFLOWS.glob("*.json")):
             continue
         validated_calls += 1
         cred = (node.get("credentials") or {}).get("httpHeaderAuth")
-        if cred != EXPECTED_CREDENTIAL:
+        if cred != expected_credential:
             err(wf, f"'{name}': credential reference {cred} != expected")
         header_values = {h["name"]: h["value"] for h in p.get("headerParameters", {}).get("parameters", [])}
         headers = set(header_values)

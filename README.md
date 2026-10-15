@@ -129,7 +129,8 @@ npm run test:e2e        # Playwright journeys against the running stack (uses in
 | [docs/BACKEND_CONVENTIONS.md](docs/BACKEND_CONVENTIONS.md) | How to add backend modules |
 | [frontend/README.md](frontend/README.md) | Frontend architecture: BFF, cookies, CSRF and the API client |
 | [frontend/docs/MODULE_PAGES_GUIDE.md](frontend/docs/MODULE_PAGES_GUIDE.md) | How to add frontend pages |
-| [docs/N8N_WINDOWS_SETUP.md](docs/N8N_WINDOWS_SETUP.md) | Workflow automation with n8n on Windows (no Docker): install, start, connect, back up |
+| [docs/N8N_MANAGED_MODE.md](docs/N8N_MANAGED_MODE.md) | Automation on a deployed server: one platform n8n, RightsFlow provisions each organization's workflows; admins only switch automations on |
+| [docs/N8N_WINDOWS_SETUP.md](docs/N8N_WINDOWS_SETUP.md) | Self-hosted n8n on Windows (development, no Docker): install, start, connect, back up |
 | [docs/N8N_ARCHITECTURE.md](docs/N8N_ARCHITECTURE.md), [N8N_WORKFLOWS.md](docs/N8N_WORKFLOWS.md), [N8N_SECURITY.md](docs/N8N_SECURITY.md) | Automation design, the five workflows, credentials and threat model |
 | [docs/N8N_TEST_RESULTS.md](docs/N8N_TEST_RESULTS.md), [N8N_TROUBLESHOOTING.md](docs/N8N_TROUBLESHOOTING.md) | What was verified (and how), and common problems |
 

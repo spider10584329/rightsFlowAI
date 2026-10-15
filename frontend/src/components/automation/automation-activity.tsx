@@ -28,7 +28,8 @@ import {
 } from "@/lib/api/hooks/automation";
 import { formatDateTime, formatRelative, titleCase } from "@/lib/utils";
 
-import { eventStatusTone, formatAge, prettyJson, runStatusTone, triggerLabel } from "./automation-format";
+import { eventStatusTone, formatAge, prettyJson, runStatusTone, triggerLabel, workflowLabel } from "./automation-format";
+import { RunOutputs } from "./run-outputs";
 
 /** Relative time with the full timestamp on hover; a dash when empty. */
 export function When({ value }: { value: string | null | undefined }) {
@@ -42,8 +43,13 @@ export function When({ value }: { value: string | null | undefined }) {
 
 // ----------------------------------------------------------------- overview
 
-export function AutomationOverviewCards({ orgId }: { orgId: string }) {
+/**
+ * Health tiles. In managed mode (`automationsOn` given) the first tile counts
+ * the automations that are switched on instead of hand-made keys.
+ */
+export function AutomationOverviewCards({ orgId, automationsOn }: { orgId: string; automationsOn?: number }) {
   const overview = useAutomationOverview(orgId);
+  const managed = automationsOn !== undefined;
   if (overview.error && !overview.data) {
     return (
       <Card className="mb-6">
@@ -56,27 +62,37 @@ export function AutomationOverviewCards({ orgId }: { orgId: string }) {
   const expiring = data?.expiring_credentials ?? 0;
   return (
     <>
-      {data?.automation_enabled === false ? (
+      {!managed && data?.automation_enabled === false ? (
         <Alert tone="warning" title="Event delivery is off" className="mb-4">
           No unrevoked key has the <span className="font-mono">events:consume</span> scope, so uploads and other changes are not queued for n8n.
           Create a key with that scope to turn it on.
         </Alert>
       ) : null}
       <section aria-label="Automation health" className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <StatCard
-          label="Active keys"
-          value={data?.active_credentials ?? 0}
-          icon={<KeyRound aria-hidden />}
-          loading={loading}
-          hint={
-            data ? (
-              <>
-                {expiring > 0 ? `${expiring.toLocaleString()} expiring soon` : "None expiring soon"}
-                {data.automation_enabled !== undefined ? ` · Event delivery ${data.automation_enabled ? "on" : "off"}` : null}
-              </>
-            ) : undefined
-          }
-        />
+        {managed ? (
+          <StatCard
+            label="Automations on"
+            value={automationsOn}
+            icon={<Workflow aria-hidden />}
+            loading={loading}
+            hint={data?.automation_enabled !== undefined ? `Event delivery ${data.automation_enabled ? "on" : "off"}` : undefined}
+          />
+        ) : (
+          <StatCard
+            label="Active keys"
+            value={data?.active_credentials ?? 0}
+            icon={<KeyRound aria-hidden />}
+            loading={loading}
+            hint={
+              data ? (
+                <>
+                  {expiring > 0 ? `${expiring.toLocaleString()} expiring soon` : "None expiring soon"}
+                  {data.automation_enabled !== undefined ? ` · Event delivery ${data.automation_enabled ? "on" : "off"}` : null}
+                </>
+              ) : undefined
+            }
+          />
+        )}
         <StatCard
           label="Pending events"
           value={data ? data.outbox.pending + data.outbox.claimed : 0}
@@ -120,7 +136,7 @@ export function RunsPanel({ orgId }: { orgId: string }) {
       header: "Workflow",
       cell: (run) => (
         <div className="min-w-0">
-          <p className="truncate font-medium">{run.workflow}</p>
+          <p className="truncate font-medium">{workflowLabel(run.workflow)}</p>
           {run.execution_id ? <p className="truncate font-mono text-2xs text-fg-subtle">Execution {run.execution_id}</p> : null}
         </div>
       ),
@@ -154,20 +170,19 @@ export function RunsPanel({ orgId }: { orgId: string }) {
     },
     {
       id: "summary",
-      header: <span className="sr-only">Summary</span>,
-      cell: (run) =>
-        run.summary ? (
-          <Button
-            size="xs"
-            variant="ghost"
-            aria-expanded={expanded.has(run.id)}
-            aria-controls={`run-summary-${run.id}`}
-            leftIcon={expanded.has(run.id) ? <ChevronDown aria-hidden /> : <ChevronRight aria-hidden />}
-            onClick={() => toggle(run.id)}
-          >
-            Summary<span className="sr-only"> for {run.workflow}</span>
-          </Button>
-        ) : null,
+      header: <span className="sr-only">Results</span>,
+      cell: (run) => (
+        <Button
+          size="xs"
+          variant="ghost"
+          aria-expanded={expanded.has(run.id)}
+          aria-controls={`run-summary-${run.id}`}
+          leftIcon={expanded.has(run.id) ? <ChevronDown aria-hidden /> : <ChevronRight aria-hidden />}
+          onClick={() => toggle(run.id)}
+        >
+          Results<span className="sr-only"> for {run.workflow}</span>
+        </Button>
+      ),
     },
   ];
 
@@ -195,15 +210,22 @@ export function RunsPanel({ orgId }: { orgId: string }) {
         onRetry={() => void runs.refetch()}
         caption="Recent automation runs"
         renderExpanded={(run) =>
-          run.summary && expanded.has(run.id) ? (
-            <pre
-              id={`run-summary-${run.id}`}
-              tabIndex={0}
-              aria-label={`Summary for ${run.workflow}`}
-              className="scrollbar-thin max-h-72 overflow-auto rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs text-fg focus-visible:outline-2 focus-visible:outline-ring"
-            >
-              {prettyJson(run.summary)}
-            </pre>
+          expanded.has(run.id) ? (
+            <div id={`run-summary-${run.id}`} className="space-y-3">
+              <RunOutputs orgId={orgId} runId={run.id} />
+              {run.summary ? (
+                <details>
+                  <summary className="cursor-pointer text-xs text-fg-muted hover:text-fg">Technical summary</summary>
+                  <pre
+                    tabIndex={0}
+                    aria-label={`Summary for ${run.workflow}`}
+                    className="scrollbar-thin mt-2 max-h-72 overflow-auto rounded-md border border-border bg-surface px-3 py-2 font-mono text-xs text-fg focus-visible:outline-2 focus-visible:outline-ring"
+                  >
+                    {prettyJson(run.summary)}
+                  </pre>
+                </details>
+              ) : null}
+            </div>
           ) : null
         }
         emptyState={
@@ -211,7 +233,7 @@ export function RunsPanel({ orgId }: { orgId: string }) {
             compact
             icon={<Workflow aria-hidden />}
             title={status === "all" ? "No runs recorded yet" : "No runs with this status"}
-            description="Runs appear once n8n workflows start reporting with an automation key."
+            description="Runs appear here once an automation has run."
           />
         }
       />

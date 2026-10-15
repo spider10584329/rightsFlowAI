@@ -69,6 +69,12 @@ def _pepper() -> bytes:
     return (settings.automation_key_pepper or settings.jwt_secret_key).encode("utf-8")
 
 
+def derive_secret(label: str) -> str:
+    """A stable server-side secret for ``label`` (HMAC with the key pepper), so
+    values like webhook trigger secrets never need to be stored."""
+    return hmac.new(_pepper(), label.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def hash_secret(key_id: str, secret: str) -> str:
     return hmac.new(_pepper(), f"{key_id}:{secret}".encode("utf-8"), hashlib.sha256).hexdigest()
 
@@ -103,7 +109,7 @@ def _validate_scopes(scopes: list[str] | None) -> list[str]:
     return chosen
 
 
-def _service_user(db: Session, ctx: OrgContext, name: str, key_id: str) -> User:
+def _service_user(db: Session, name: str, key_id: str) -> User:
     user = User(
         email=f"automation+{key_id}@automation.rightsflow.invalid",
         full_name=f"Automation: {name}"[:255],
@@ -145,8 +151,16 @@ def credential_state(credential: IntegrationCredential) -> str:
     return "active"
 
 
+def _refuse_in_managed_mode() -> None:
+    if settings.automation_mode == "managed":
+        raise ConflictError(
+            "Automation keys are issued and rotated by RightsFlow on this server. Switch automations on in "
+            "Settings > Automation instead.", code="automation_managed")
+
+
 def create_credential(db: Session, ctx: OrgContext, *, name: str, scopes: list[str] | None,
                       expires_in_days: int | None, request: Request | None) -> IssuedCredential:
+    _refuse_in_managed_mode()
     chosen = _validate_scopes(scopes)
     lifetime = DEFAULT_LIFETIME_DAYS if expires_in_days is None else expires_in_days
     if not 1 <= lifetime <= MAX_LIFETIME_DAYS:
@@ -157,7 +171,7 @@ def create_credential(db: Session, ctx: OrgContext, *, name: str, scopes: list[s
         raise ConflictError("Too many active automation credentials; revoke unused ones first",
                             code="credential_limit")
     key_id, secret, token = _new_token()
-    user = _service_user(db, ctx, name, key_id)
+    user = _service_user(db, name, key_id)
     credential = IntegrationCredential(
         organization_id=ctx.organization_id, name=name.strip()[:100], key_id=key_id,
         secret_hash=hash_secret(key_id, secret), scopes=chosen, service_user_id=user.id,
@@ -180,10 +194,13 @@ def rotate_credential(db: Session, ctx: OrgContext, credential_id: str, *, grace
                       request: Request | None) -> IssuedCredential:
     """Issue a replacement key (same scopes and service user). The old key keeps
     working for ``grace_hours`` so running workflows can switch over."""
+    _refuse_in_managed_mode()
     if not 0 <= grace_hours <= ROTATION_GRACE_HOURS_MAX:
         raise ValidationFailedError(f"Grace period must be 0 to {ROTATION_GRACE_HOURS_MAX} hours",
                                     code="invalid_grace_period")
     old = get_credential(db, ctx.organization_id, credential_id, lock=True)
+    if old.managed:
+        raise ConflictError("This key is managed by RightsFlow", code="credential_managed")
     if credential_state(old) != "active":
         raise ConflictError(f"Credential is {credential_state(old)}", code="credential_not_active")
     key_id, secret, token = _new_token()
@@ -217,6 +234,9 @@ def rotate_credential(db: Session, ctx: OrgContext, credential_id: str, *, grace
 def revoke_credential(db: Session, ctx: OrgContext, credential_id: str, *, reason: str | None,
                       request: Request | None) -> IntegrationCredential:
     credential = get_credential(db, ctx.organization_id, credential_id, lock=True)
+    if credential.managed:
+        raise ConflictError("This key is managed by RightsFlow; switch automations off in Settings > Automation "
+                            "to revoke it", code="credential_managed")
     if credential.revoked_at is None:
         credential.revoked_at = utc_now()
         credential.revoked_reason = (reason or "revoked")[:200]
@@ -234,6 +254,8 @@ def release_instance(db: Session, ctx: OrgContext, credential_id: str, *, reques
     """Admin recovery after an n8n data reset or move (N8N-07): forget the bound
     instance so the next instance that uses the key binds instead."""
     credential = get_credential(db, ctx.organization_id, credential_id, lock=True)
+    if credential.managed:
+        raise ConflictError("This key is managed by RightsFlow", code="credential_managed")
     if credential.bound_instance_id is not None:
         previous = credential.bound_instance_id
         credential.bound_instance_id = None
@@ -246,6 +268,62 @@ def release_instance(db: Session, ctx: OrgContext, credential_id: str, *, reques
         db.commit()
         db.refresh(credential)
     return credential
+
+
+MANAGED_KEY_NAME = "RightsFlow managed automation"
+
+
+def issue_managed_credential(db: Session, organization_id: str, *, scopes: list[str],
+                             previous: IntegrationCredential | None, grace: timedelta) -> IssuedCredential:
+    """Issue the key RightsFlow stores in its own n8n for an organization
+    (managed mode). Reuses the previous managed key's service user, so automated
+    changes stay attributed to one "Automation" identity; the previous key keeps
+    working for ``grace`` while n8n switches over. No person sees the token.
+    Flushes; the caller commits."""
+    chosen = _validate_scopes(scopes)
+    key_id, secret, token = _new_token()
+    now = utc_now()
+    service_user_id = previous.service_user_id if previous is not None else _service_user(
+        db, MANAGED_KEY_NAME, key_id).id
+    credential = IntegrationCredential(
+        organization_id=organization_id, name=MANAGED_KEY_NAME, key_id=key_id,
+        secret_hash=hash_secret(key_id, secret), scopes=chosen, service_user_id=service_user_id,
+        expires_at=now + timedelta(days=settings.automation_managed_key_lifetime_days),
+        rotated_from_id=previous.id if previous is not None else None, managed=True,
+    )
+    db.add(credential)
+    if previous is not None and previous.revoked_at is None:
+        grace_end = now + grace
+        if previous.expires_at is None or previous.expires_at > grace_end:
+            previous.expires_at = grace_end
+    db.flush()
+    record_audit(db, action="automation.managed_key_issued", organization_id=organization_id,
+                 entity_type="integration_credential", entity_id=credential.id,
+                 summary=f"RightsFlow issued its automation key {key_id}"
+                         + (f" (replaces {previous.key_id})" if previous is not None else ""),
+                 changes={"scopes": chosen, "expires_at": credential.expires_at.isoformat()})
+    return IssuedCredential(credential=credential, token=token)
+
+
+def revoke_managed_credentials(db: Session, organization_id: str, *, keep_id: str | None, reason: str,
+                               only_expired: bool = False) -> int:
+    """Revoke the organization's managed keys except ``keep_id`` (all of them
+    when it is None). With ``only_expired``, only keys whose grace period is
+    over. Flushes; the caller commits."""
+    now = utc_now()
+    revoked = 0
+    for credential in db.scalars(select(IntegrationCredential).where(
+            IntegrationCredential.organization_id == organization_id, IntegrationCredential.managed.is_(True),
+            IntegrationCredential.revoked_at.is_(None))).all():
+        if credential.id == keep_id:
+            continue
+        if only_expired and (credential.expires_at is None or credential.expires_at > now):
+            continue
+        credential.revoked_at = now
+        credential.revoked_reason = reason[:200]
+        revoked += 1
+    db.flush()
+    return revoked
 
 
 def instance_payload(credential: IntegrationCredential) -> dict:
@@ -294,5 +372,6 @@ def credential_payload(credential: IntegrationCredential) -> dict:
         "created_by_id": credential.created_by_id,
         "created_at": credential.created_at,
         "expiry_level": expiry_level(credential)[0],
+        "managed": credential.managed,
         **instance_payload(credential),
     }

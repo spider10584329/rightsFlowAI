@@ -1,7 +1,8 @@
 """Periodic jobs.
 
 The worker calls :func:`schedule_periodic_jobs` roughly every hour. It queues
-one ``contract_expiry_check`` per active organization per UTC day; the
+one ``contract_expiry_check`` per active organization per UTC day and, in
+managed automation mode, one ``automation_reconcile_all`` per hour; the
 idempotency key makes repeated calls (and several workers) harmless.
 """
 
@@ -11,6 +12,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.mixins import utc_now
 from app.models.contract import Contract
@@ -65,6 +67,14 @@ def schedule_periodic_jobs(db: Session, now: datetime | None = None) -> int:
         enqueue(db, organization_id=None, job_type="automation_maintenance", payload={"date": day},
                 idempotency_key=automation_key, max_attempts=2)
         created += 1
+    # Managed automation: heal drift in n8n and renew keys, once per hour.
+    if settings.automation_mode == "managed":
+        hour = (now or utc_now()).strftime("%Y-%m-%dT%H")
+        reconcile_key = f"automation_reconcile_all:{hour}"
+        if db.scalar(select(BackgroundJob.id).where(BackgroundJob.idempotency_key == reconcile_key)) is None:
+            enqueue(db, organization_id=None, job_type="automation_reconcile_all", payload={"hour": hour},
+                    idempotency_key=reconcile_key, max_attempts=2)
+            created += 1
     return created
 
 

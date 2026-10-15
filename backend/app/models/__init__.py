@@ -43,6 +43,7 @@ from app.models.royalty import (
     StatementLine,
 )
 from app.models.automation import (
+    AutomationConnection,
     AutomationDelivery,
     AutomationEvent,
     AutomationIdempotencyKey,
@@ -52,12 +53,14 @@ from app.models.automation import (
     AutomationRun,
     AutomationStatementState,
     IntegrationCredential,
+    OrganizationAutomation,
 )
 
 __all__ = [
     "AISuggestion",
     "AIUsageRecord",
     "AuditLog",
+    "AutomationConnection",
     "AutomationDelivery",
     "AutomationEvent",
     "AutomationIdempotencyKey",
@@ -78,6 +81,7 @@ __all__ = [
     "LedgerEntry",
     "Notification",
     "Organization",
+    "OrganizationAutomation",
     "OrganizationInvitation",
     "OrganizationMembership",
     "OwnershipShare",

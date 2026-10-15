@@ -424,8 +424,14 @@ function ScopesCell({ scopes }: { scopes: string[] }) {
   );
 }
 
-export function KeysPanel({ orgId }: { orgId: string }) {
+/**
+ * Hand-made automation keys. With `legacy` (managed mode, where RightsFlow
+ * issues and rotates its own keys) only keys someone created by hand are listed,
+ * and they can only be revoked: nothing new is created here.
+ */
+export function KeysPanel({ orgId, legacy = false }: { orgId: string; legacy?: boolean }) {
   const credentials = useAutomationCredentials(orgId);
+  const rows = legacy ? credentials.data?.filter((credential) => !credential.managed) : credentials.data;
   const revoke = useRevokeAutomationCredential(orgId);
   const [creating, setCreating] = useState(false);
   const [rotating, setRotating] = useState<AutomationCredential | null>(null);
@@ -493,8 +499,8 @@ export function KeysPanel({ orgId }: { orgId: string }) {
 
   const rowActions = (credential: AutomationCredential): RowAction[] => {
     const actions: RowAction[] = [];
-    if (credential.state === "active") actions.push({ label: "Rotate key", icon: <RefreshCw aria-hidden />, onSelect: () => setRotating(credential) });
-    if (canReleaseInstance(credential)) actions.push({ label: "Release instance", icon: <ServerOff aria-hidden />, onSelect: () => setReleasing(credential) });
+    if (!legacy && credential.state === "active") actions.push({ label: "Rotate key", icon: <RefreshCw aria-hidden />, onSelect: () => setRotating(credential) });
+    if (!legacy && canReleaseInstance(credential)) actions.push({ label: "Release instance", icon: <ServerOff aria-hidden />, onSelect: () => setReleasing(credential) });
     if (credential.state !== "revoked") {
       actions.push({ label: "Revoke key", icon: <Ban aria-hidden />, destructive: true, separated: actions.length > 0, onSelect: () => setRevoking(credential) });
     }
@@ -503,18 +509,25 @@ export function KeysPanel({ orgId }: { orgId: string }) {
 
   return (
     <Card>
-      <CardHeader
-        title="Automation keys"
-        description="API keys n8n uses to call RightsFlow. Keys are scoped to this organization and shown only once."
-        actions={
-          <Button size="sm" leftIcon={<Plus aria-hidden />} onClick={() => setCreating(true)}>
-            Create key
-          </Button>
-        }
-      />
+      {legacy ? (
+        <CardHeader
+          title="Keys created by hand"
+          description="Keys from an earlier, hand-made n8n setup. RightsFlow now connects automation itself and doesn't use them; revoke the ones nothing needs anymore."
+        />
+      ) : (
+        <CardHeader
+          title="Automation keys"
+          description="API keys n8n uses to call RightsFlow. Keys are scoped to this organization and shown only once."
+          actions={
+            <Button size="sm" leftIcon={<Plus aria-hidden />} onClick={() => setCreating(true)}>
+              Create key
+            </Button>
+          }
+        />
+      )}
       <DataTable
         columns={columns}
-        data={credentials.data}
+        data={rows}
         getRowId={(credential) => credential.id}
         getRowLabel={(credential) => credential.name}
         isLoading={credentials.isLoading}
@@ -524,17 +537,21 @@ export function KeysPanel({ orgId }: { orgId: string }) {
         rowActions={rowActions}
         caption="Automation keys"
         emptyState={
-          <EmptyState
-            compact
-            icon={<KeyRound aria-hidden />}
-            title="No automation keys yet"
-            description="Create a key, then run the n8n setup script with it."
-            action={
-              <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
-                Create key
-              </Button>
-            }
-          />
+          legacy ? (
+            <EmptyState compact icon={<KeyRound aria-hidden />} title="No keys created by hand" description="Nothing to clean up." />
+          ) : (
+            <EmptyState
+              compact
+              icon={<KeyRound aria-hidden />}
+              title="No automation keys yet"
+              description="Create a key, then run the n8n setup script with it."
+              action={
+                <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
+                  Create key
+                </Button>
+              }
+            />
+          )
         }
       />
       <CreateKeyDialog open={creating} onOpenChange={setCreating} orgId={orgId} />

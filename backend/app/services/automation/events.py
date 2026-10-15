@@ -58,6 +58,11 @@ def emit_event(db: Session, *, organization_id: str, event_type: str, payload: d
     event = AutomationEvent(organization_id=organization_id, event_type=event_type, payload=payload,
                             dedupe_key=key, correlation_id=correlation_id)
     db.add(event)
+    # Managed mode: start the automation that handles this event right away
+    # (same transaction, so nothing starts if the business change rolls back).
+    from app.services.automation.provisioner import on_event
+
+    on_event(db, organization_id, event_type)
     return event
 
 

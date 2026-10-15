@@ -2,10 +2,12 @@ import type { BadgeTone } from "@/components/ui/badge";
 import type {
   AutomationCredential,
   AutomationEventStatus,
+  AutomationRun,
   AutomationRunStatus,
   CredentialExpiryLevel,
   CredentialState,
   InboxFileOutcome,
+  ManagedAutomation,
   ReviewTask,
 } from "@/lib/api/hooks/automation";
 import type { Role } from "@/lib/api/types";
@@ -264,7 +266,99 @@ export function prettyJson(value: unknown): string {
   }
 }
 
+/** Self-hosted mode only: how an operator connects a local n8n with a key. */
 export const SETUP_COMMAND = "powershell -ExecutionPolicy Bypass -File scripts\\setup-n8n-automation.ps1 -Token <key>";
+
+// ----------------------------------------------------------------- managed automations
+
+/** Readable names for the workflow ids n8n reports in runs. */
+export const WORKFLOW_LABELS: Record<string, string> = {
+  "royalty-import": "Statement processing",
+  "contract-expiration": "Contract expiration reminders",
+  "ai-metadata-review": "AI metadata and rights review",
+  "monthly-reporting": "Monthly royalty report",
+  "automation-health": "Automation health check",
+  "automation-error-handler": "Automation error handler",
+};
+
+export function workflowLabel(workflow: string): string {
+  return WORKFLOW_LABELS[workflow] ?? workflow;
+}
+
+export function managedStatusLabel(automation: Pick<ManagedAutomation, "enabled" | "status">): string {
+  switch (automation.status) {
+    case "active":
+      return "On";
+    case "pending":
+      return automation.enabled ? "Setting up" : "Switching off";
+    case "error":
+      return "Needs attention";
+    default:
+      return "Off";
+  }
+}
+
+export function managedStatusTone(automation: Pick<ManagedAutomation, "enabled" | "status">): BadgeTone {
+  switch (automation.status) {
+    case "active":
+      return "success";
+    case "pending":
+      return "info";
+    case "error":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+export const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({ value: String(hour), label: `${String(hour).padStart(2, "0")}:00 UTC` }));
+
+/** "30, 14, 7" -> [30, 14, 7] (1 to 5 whole numbers of days, 1..365), or null when invalid. */
+export function parseThresholds(text: string): number[] | null {
+  const parts = text
+    .split(/[,\s]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0 || parts.length > 5 || parts.some((part) => !/^\d+$/.test(part))) return null;
+  const days = [...new Set(parts.map(Number))];
+  if (days.some((day) => day < 1 || day > 365)) return null;
+  return days.sort((a, b) => b - a);
+}
+
+function plural(count: number, noun: string): string {
+  return `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** One-line outcome of a run from its summary (counts only), or null. */
+export function runOutcomeText(run: Pick<AutomationRun, "workflow" | "summary">): string | null {
+  const summary = run.summary ?? {};
+  const n = (key: string) => (typeof summary[key] === "number" ? (summary[key] as number) : null);
+  switch (run.workflow) {
+    case "royalty-import": {
+      const statements = n("statements");
+      if (statements === null) return null;
+      const review = n("needing_review") ?? 0;
+      return statements === 0 ? "Nothing to process" : `${plural(statements, "statement")}${review ? `, ${review} need review` : ""}`;
+    }
+    case "contract-expiration": {
+      const sent = n("sent");
+      const contracts = n("contracts");
+      if (contracts === 0) return "No reminders due";
+      return sent !== null ? `${plural(sent, "reminder")} sent` : null;
+    }
+    case "ai-metadata-review": {
+      const subjects = n("subjects");
+      if (subjects === null) return null;
+      return subjects === 0 ? "Nothing to review" : `${plural(subjects, "item")} reviewed`;
+    }
+    case "monthly-reporting": {
+      const period = typeof summary.period === "string" ? summary.period : null;
+      return period ? `Report for ${period}${summary.duplicate ? " (already sent)" : ""}` : null;
+    }
+    default:
+      return null;
+  }
+}
 
 // ----------------------------------------------------------------- review task details
 

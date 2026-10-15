@@ -1,6 +1,19 @@
-"""Generates the RightsFlow AI n8n workflow exports in ``workflows/``.
+"""Generates the RightsFlow AI n8n workflow exports in ``workflows/`` and the
+managed-mode templates in ``backend/app/services/automation/n8n_templates/``.
 
     backend\\.venv\\Scripts\\python.exe automation\\n8n\\build_workflows.py
+
+Two variants are built from the same node definitions:
+
+- **Self-hosted exports** (``workflows/``): imported into a local n8n by
+  scripts/setup-n8n-automation.ps1 (development and single-machine operation).
+- **Managed templates** (``n8n_templates/``): the backend provisions one copy
+  per organization into the platform-operated n8n through n8n's public API
+  (``app/services/automation/provisioner.py``). They have no local inbox, are
+  started by schedule or by an authenticated webhook ("Run now", "process on
+  upload") and take their settings from the organization's automation settings.
+  Placeholders (``__RF_*__``) are filled in by the backend; see
+  ``MANAGED_PLACEHOLDERS``.
 
 The JSON files are the source of truth for import; this script keeps the six
 workflows consistent (same credential, headers, retry and error-workflow
@@ -30,7 +43,9 @@ import json
 import uuid
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent / "workflows"
+ROOT = Path(__file__).resolve().parent
+OUT = ROOT / "workflows"
+MANAGED_OUT = ROOT.parents[1] / "backend" / "app" / "services" / "automation" / "n8n_templates"
 
 CREDENTIAL = {"httpHeaderAuth": {"id": "RfAutomationKey1", "name": "RightsFlow automation key"}}
 INSTANCE_EXPR = "={{ $('Config').first().json.instanceId }}"
@@ -38,9 +53,34 @@ INSTANCE_PREFIX = "{{ $('Config').first().json.instanceId }}:"
 ERROR_WORKFLOW_ID = "RfWfErrorHandler"
 API = "={{ $('Config').first().json.apiBaseUrl }}/api/v1/automation"
 
+# Bump whenever a managed template changes: the backend's reconciler updates
+# every organization's provisioned workflows to the new version.
+MANAGED_TEMPLATE_VERSION = 1
+# Filled in per organization by app/services/automation/provisioner.py.
+MANAGED_PLACEHOLDERS = {
+    "__RF_API_URL__": "API base URL the platform n8n uses to reach RightsFlow",
+    "__RF_INSTANCE_ID__": "platform n8n instance id (X-Automation-Instance)",
+    "__RF_N8N_HEALTH_URL__": "the platform n8n's own /healthz URL",
+    "__RF_SETTINGS_JSON__": "the automation's settings as a JSON object literal",
+    "__RF_CRON__": "schedule (cron expression, UTC)",
+    "__RF_WEBHOOK_PATH__": "webhook path of the 'Run on request' trigger",
+    "__RF_WEBHOOK_ID__": "webhook id of the 'Run on request' trigger",
+    "__RF_API_CREDENTIAL_ID__": "n8n credential holding the organization's automation key",
+    "__RF_API_CREDENTIAL_NAME__": "its name",
+    "__RF_TRIGGER_CREDENTIAL_ID__": "n8n credential that authenticates webhook triggers",
+    "__RF_TRIGGER_CREDENTIAL_NAME__": "its name",
+    "__RF_ERROR_WORKFLOW_ID__": "the organization's error handler workflow",
+    "__RF_ORG_LABEL__": "organization label used in workflow names",
+}
+MANAGED_CREDENTIAL = {"httpHeaderAuth": {"id": "__RF_API_CREDENTIAL_ID__", "name": "__RF_API_CREDENTIAL_NAME__"}}
+MANAGED_TRIGGER_CREDENTIAL = {"httpHeaderAuth": {"id": "__RF_TRIGGER_CREDENTIAL_ID__",
+                                                 "name": "__RF_TRIGGER_CREDENTIAL_NAME__"}}
+RUN_ON_REQUEST = "Run on request"
+
 VERSIONS = {
     "manualTrigger": 1,
     "scheduleTrigger": 1.2,
+    "webhook": 2,
     "code": 2,
     "httpRequest": 4.2,
     "if": 2.2,
@@ -55,8 +95,9 @@ def _id(workflow: str, name: str) -> str:
 
 
 class Flow:
-    def __init__(self, key: str, wid: str, name: str, description: str):
+    def __init__(self, key: str, wid: str, name: str, description: str, *, managed: bool = False):
         self.key, self.wid, self.name, self.description = key, wid, name, description
+        self.managed = managed
         self.nodes: list[dict] = []
         self.connections: dict[str, dict] = {}
         self._x = 0
@@ -82,10 +123,27 @@ class Flow:
         for a, b in zip(names, names[1:]):
             self.link(a, b)
 
+    @property
+    def credential(self) -> dict:
+        return MANAGED_CREDENTIAL if self.managed else CREDENTIAL
+
     def export(self, *, error_workflow: bool = True) -> dict:
         settings = {"executionOrder": "v1", "saveManualExecutions": True, "saveDataErrorExecution": "all",
                     "saveDataSuccessExecution": "all", "saveExecutionProgress": True,
                     "callerPolicy": "workflowsFromSameOwner", "timezone": "UTC"}
+        if self.managed:
+            # Runs are recorded in RightsFlow; successful executions in the shared
+            # n8n would only accumulate data (including webhook request headers).
+            settings["saveDataSuccessExecution"] = "none"
+            if error_workflow:
+                settings["errorWorkflow"] = "__RF_ERROR_WORKFLOW_ID__"
+            # Only the fields n8n's public API accepts on create/update, plus
+            # "meta", which the backend reads and strips before sending.
+            return {"name": f"RightsFlow [__RF_ORG_LABEL__] - {self.name.removeprefix('RightsFlow - ')}",
+                    "nodes": self.nodes, "connections": self.connections, "settings": settings,
+                    "meta": {"rightsflow": {"workflow": self.key, "description": self.description,
+                                            "template_version": MANAGED_TEMPLATE_VERSION,
+                                            "generated_by": "automation/n8n/build_workflows.py"}}}
         if error_workflow:
             settings["errorWorkflow"] = ERROR_WORKFLOW_ID
         return {"id": self.wid, "name": self.name, "active": False, "nodes": self.nodes,
@@ -132,7 +190,7 @@ def http(method: str, url: str, *, body: str | None = None, query: dict | None =
 
 
 def api_node(flow: Flow, name: str, params: dict, *, retry: bool = True, **extra) -> str:
-    settings = {"credentials": CREDENTIAL}
+    settings = {"credentials": flow.credential}
     if retry:
         settings.update({"retryOnFail": True, "maxTries": 3, "waitBetweenTries": 5000})
     return flow.node(name, "httpRequest", params, **settings, **extra)
@@ -152,7 +210,25 @@ def if_true(expression: str) -> dict:
     }
 
 
-def config(workflow: str, schedule_node: str, extra_js: str = "") -> dict:
+def config(workflow: str, schedule_node: str, extra_js: str = "", *, managed: bool = False) -> dict:
+    if managed:
+        # "options" are the organization's settings for this automation, written
+        # in by the backend when it provisions the workflow.
+        return code(f"""
+// Non-secret settings. The API key is in the organization's automation credential.
+const triggeredBySchedule = $('{schedule_node}').isExecuted;
+const request = $('{RUN_ON_REQUEST}').isExecuted ? ($('{RUN_ON_REQUEST}').first().json.body || {{}}) : {{}};
+const options = __RF_SETTINGS_JSON__;
+const settings = {{
+  apiBaseUrl: '__RF_API_URL__',
+  instanceId: '__RF_INSTANCE_ID__',
+  workflow: '{workflow}',
+  trigger: triggeredBySchedule ? 'schedule' : (request.trigger === 'event' ? 'event' : 'manual'),
+  executionId: String($execution.id),
+}};
+{extra_js}
+return [{{ json: settings }}];
+""")
     return code(f"""
 // Non-secret settings. The API key is in the "RightsFlow automation key" credential.
 const triggeredBySchedule = $('{schedule_node}').isExecuted;
@@ -184,17 +260,52 @@ def finish_run(flow: Flow, name: str = "Finish run", y: int = 300) -> str:
         y=y)
 
 
-def triggers(flow: Flow, schedule_rule: dict, schedule_name: str) -> tuple[str, str]:
+def triggers(flow: Flow, schedule_rule: dict, schedule_name: str) -> tuple[str, ...]:
+    """Trigger nodes; every one of them feeds the Config node.
+
+    Managed workflows also listen on an authenticated webhook (the backend calls
+    it for "Run now" and for processing right after an upload) and take their
+    schedule from the organization's settings."""
     manual = flow.node("Run now", "manualTrigger", {}, x=0, y=200)
+    if flow.managed:
+        rule = {"field": "cronExpression", "expression": "__RF_CRON__"}
+        schedule = flow.node(schedule_name, "scheduleTrigger", {"rule": {"interval": [rule]}}, x=0, y=400)
+        webhook = flow.node(RUN_ON_REQUEST, "webhook", {
+            "httpMethod": "POST", "path": "__RF_WEBHOOK_PATH__", "authentication": "headerAuth",
+            "responseMode": "onReceived", "options": {},
+        }, x=0, y=0, credentials=MANAGED_TRIGGER_CREDENTIAL, webhookId="__RF_WEBHOOK_ID__")
+        flow._x = 0
+        return manual, schedule, webhook
     schedule = flow.node(schedule_name, "scheduleTrigger", {"rule": {"interval": [schedule_rule]}}, x=0, y=400)
     flow._x = 0
     return manual, schedule
 
 
+def link_triggers(flow: Flow, trigger_nodes: tuple[str, ...], target: str) -> None:
+    for trigger in trigger_nodes:
+        flow.link(trigger, target)
+
+
+def entry(flow: Flow, schedule_rule: dict, schedule_name: str, extra_js: str = "",
+          managed_js: str = "") -> str:
+    """Trigger nodes plus the Config node they all feed. Self-hosted workflows
+    use the fixed ``schedule_rule``; managed ones use the organization's
+    schedule and settings (``managed_js`` reads them from ``options``)."""
+    if flow.managed:
+        schedule_name = "On schedule"
+    trigger_nodes = triggers(flow, schedule_rule, schedule_name)
+    cfg = flow.node("Config", "code", config(flow.key, schedule_name, managed_js if flow.managed else extra_js,
+                                             managed=flow.managed))
+    link_triggers(flow, trigger_nodes, cfg)
+    return cfg
+
+
 # --------------------------------------------------------------------------- A: royalty statements
 
 
-def royalty_import() -> Flow:
+def royalty_import(managed: bool = False) -> Flow:
+    if managed:
+        return royalty_import_managed()
     f = Flow("royalty-import", "RfWfRoyaltyImprt", "RightsFlow - A. Royalty statement import",
              "Imports statements from the local inbox and processes statements users uploaded "
              "(statement.uploaded events), then raises review tasks for unmatched or held lines. Never posts.")
@@ -284,19 +395,7 @@ if (!work.length) {
 return work.map((w) => ({ json: { hasWork: true, ...w } }));
 """))
     has_work = f.node("Anything to process?", "if", if_true("={{ $json.hasWork }}"))
-    process = api_node(f, "Start processing", http(
-        "POST", f"{API}/statements/{{{{ $json.statement_id }}}}/process",
-        idem="=process-{{ $execution.id }}-{{ $json.statement_id }}", never_error=True))
-    wait = api_node(f, "Wait for processing", http(
-        "GET", f"{API}/statements/{{{{ $('Collect statements').item.json.statement_id }}}}",
-        query={"wait_seconds": "45"}, timeout=70000))
-    review = api_node(f, "Review results", http(
-        "POST", f"{API}/statements/{{{{ $('Collect statements').item.json.statement_id }}}}/review",
-        idem="=review-{{ $execution.id }}-{{ $('Collect statements').item.json.statement_id }}",
-        body="={{ JSON.stringify({ calculate: true, run_id: $('Start run').first().json.id, "
-             "event_id: $('Collect statements').item.json.event_id || null, "
-             "lease_token: $('Collect statements').item.json.lease_token || null }) }}",
-        never_error=True))
+    process, wait, review = statement_processing_nodes(f)
     summarize = f.node("Summarize", "code", code("""
 const started = $('Start processing').all();
 const results = $input.all().map((item, i) => {
@@ -348,18 +447,99 @@ return [{ json: {
     return f
 
 
+def statement_processing_nodes(f: Flow) -> tuple[str, str, str]:
+    """Start processing -> wait -> review, shared by both import variants."""
+    process = api_node(f, "Start processing", http(
+        "POST", f"{API}/statements/{{{{ $json.statement_id }}}}/process",
+        idem="=process-{{ $execution.id }}-{{ $json.statement_id }}", never_error=True))
+    wait = api_node(f, "Wait for processing", http(
+        "GET", f"{API}/statements/{{{{ $('Collect statements').item.json.statement_id }}}}",
+        query={"wait_seconds": "45"}, timeout=70000))
+    review = api_node(f, "Review results", http(
+        "POST", f"{API}/statements/{{{{ $('Collect statements').item.json.statement_id }}}}/review",
+        idem="=review-{{ $execution.id }}-{{ $('Collect statements').item.json.statement_id }}",
+        body="={{ JSON.stringify({ calculate: true, run_id: $('Start run').first().json.id, "
+             "event_id: $('Collect statements').item.json.event_id || null, "
+             "lease_token: $('Collect statements').item.json.lease_token || null }) }}",
+        never_error=True))
+    return process, wait, review
+
+
+def royalty_import_managed() -> Flow:
+    """Managed variant: statements arrive through the web app (people upload
+    them), so there is no inbox folder. Started on schedule, by "Run now" or by
+    the backend right after an upload (webhook with trigger "event")."""
+    f = Flow("royalty-import", "RfWfRoyaltyImprt", "RightsFlow - A. Royalty statement processing",
+             "Processes statements users uploaded in RightsFlow (statement.uploaded / statement.ready "
+             "events), then raises review tasks for unmatched or held lines. Never posts.", managed=True)
+    trigger_nodes = triggers(f, {}, "On schedule")
+    cfg = f.node("Config", "code", config("royalty-import", "On schedule", managed=True))
+    link_triggers(f, trigger_nodes, cfg)
+    start = start_run(f)
+    claim = api_node(f, "Claim statement events", http(
+        "POST", f"{API}/events/claim",
+        body="={{ JSON.stringify({ event_types: ['statement.uploaded', 'statement.ready'], limit: 10, "
+             "lease_seconds: 600 }) }}"),
+        executeOnce=True)
+    collect = f.node("Collect statements", "code", code("""
+// One item per statement users uploaded in the app (outbox events, leased to this run).
+const claim = $('Claim statement events').first().json;
+const work = (claim.events || []).map((event) => ({
+  statement_id: event.payload.statement_id, origin: 'event', event_id: event.id, lease_token: claim.lease_token,
+}));
+if (!work.length) {
+  return [{ json: { hasWork: false, status: 'succeeded', summary: { statements: 0 } } }];
+}
+return work.map((w) => ({ json: { hasWork: true, ...w } }));
+"""))
+    has_work = f.node("Anything to process?", "if", if_true("={{ $json.hasWork }}"))
+    process, wait, review = statement_processing_nodes(f)
+    summarize = f.node("Summarize", "code", code("""
+const started = $('Start processing').all();
+const results = $input.all().map((item, i) => {
+  const source = $('Collect statements').all()[i]?.json || {};
+  const r = item.json;
+  const body = r.body || {};
+  const progress = started[i]?.json?.body?.automation || {};
+  return {
+    statement_id: source.statement_id, origin: source.origin, http_status: r.statusCode,
+    automation: progress.outcome || null, attempts: progress.attempts ?? null,
+    needs_review: body.needs_review === true, review_task: body.task_change || null,
+    error: r.statusCode >= 300 ? (body.error?.code || `http_${r.statusCode}`) : null,
+  };
+});
+const failed = results.filter((r) => r.error);
+return [{ json: {
+  status: failed.length ? 'partial' : 'succeeded',
+  summary: {
+    statements: results.length,
+    needing_review: results.filter((r) => r.needs_review).length,
+    awaiting_mapping: results.filter((r) => (r.automation || '').startsWith('awaiting') || r.automation === 'mapping_required').length,
+    retry_waiting: results.filter((r) => ['retry_scheduled', 'retry_waiting'].includes(r.automation)).length,
+    needs_manual_review: results.filter((r) => r.automation === 'needs_manual_review').length,
+    from_events: results.length,
+    failed: failed.length, results,
+  },
+} }];
+"""))
+    finish = finish_run(f)
+    f.chain(cfg, start, claim, collect, has_work)
+    f.link(has_work, process, 0)
+    f.link(has_work, finish, 1)
+    f.chain(process, wait, review, summarize, finish)
+    return f
+
+
 # --------------------------------------------------------------------------- B: contract expiration
 
 
-def contract_expiration() -> Flow:
+def contract_expiration(managed: bool = False) -> Flow:
     f = Flow("contract-expiration", "RfWfContractExpr", "RightsFlow - B. Contract expiration reminders",
              "Daily: reminds managers about contracts expiring within 30/14/7 days or already expired. "
-             "One reminder per contract, end date and threshold.")
-    manual, schedule = triggers(f, {"field": "cronExpression", "expression": "0 7 * * *"}, "Daily 07:00 UTC")
-    cfg = f.node("Config", "code", config("contract-expiration", "Daily 07:00 UTC",
-                                          "settings.thresholds = [30, 14, 7]; // days before end date"))
-    f.link(manual, cfg)
-    f.link(schedule, cfg)
+             "One reminder per contract, end date and threshold.", managed=managed)
+    cfg = entry(f, {"field": "cronExpression", "expression": "0 7 * * *"}, "Daily 07:00 UTC",
+                "settings.thresholds = [30, 14, 7]; // days before end date",
+                "settings.thresholds = options.thresholds; // days before end date")
     start = start_run(f)
     expiring = api_node(f, "List expiring contracts", http(
         "GET", f"{API}/contracts/expiring",
@@ -412,14 +592,12 @@ return [{ json: {
 # --------------------------------------------------------------------------- C: AI review
 
 
-def ai_review() -> Flow:
+def ai_review(managed: bool = False) -> Flow:
     f = Flow("ai-metadata-review", "RfWfAiReview0001", "RightsFlow - C. AI metadata and rights review",
              "Reviews new works/recordings, requested reviews and high-severity rights conflicts with the "
-             "app's AI layer. Results are pending suggestions or advisory review tasks; people decide.")
-    manual, schedule = triggers(f, {"field": "minutes", "minutesInterval": 30}, "Every 30 minutes")
-    cfg = f.node("Config", "code", config("ai-metadata-review", "Every 30 minutes"))
-    f.link(manual, cfg)
-    f.link(schedule, cfg)
+             "app's AI layer. Results are pending suggestions or advisory review tasks; people decide.",
+             managed=managed)
+    cfg = entry(f, {"field": "minutes", "minutesInterval": 30}, "Every 30 minutes")
     start = start_run(f)
     claim = api_node(f, "Claim review events", http(
         "POST", f"{API}/events/claim",
@@ -479,17 +657,17 @@ return [{ json: {
 # --------------------------------------------------------------------------- D: monthly reporting
 
 
-def monthly_reporting() -> Flow:
+def monthly_reporting(managed: bool = False) -> Flow:
     f = Flow("monthly-reporting", "RfWfMonthlyRprt1", "RightsFlow - D. Monthly royalty report",
              "Monthly: generates last month's report with the app's report job and notifies admins/owners. "
-             "Once per report type and period.")
-    manual, schedule = triggers(f, {"field": "cronExpression", "expression": "0 6 2 * *"}, "Monthly, 2nd 06:00 UTC")
-    cfg = f.node("Config", "code", config("monthly-reporting", "Monthly, 2nd 06:00 UTC", """
+             "Once per report type and period.", managed=managed)
+    cfg = entry(f, {"field": "cronExpression", "expression": "0 6 2 * *"}, "Monthly, 2nd 06:00 UTC", """
 settings.reportType = 'revenue_by_source';
 settings.period = $now.setZone('UTC').minus({ months: 1 }).toFormat('yyyy-MM');  // last completed month
-"""))
-    f.link(manual, cfg)
-    f.link(schedule, cfg)
+""", """
+settings.reportType = options.report_type;
+settings.period = $now.setZone('UTC').minus({ months: 1 }).toFormat('yyyy-MM');  // last completed month
+""")
     start = start_run(f, ", idempotency_key: 'monthly:' + $('Config').first().json.reportType + ':' "
                          "+ $('Config').first().json.period")
     done = f.node("Already delivered?", "if", if_true("={{ $json.replayed === true && $json.status === 'succeeded' }}"))
@@ -503,7 +681,7 @@ settings.period = $now.setZone('UTC').minus({ months: 1 }).toFormat('yyyy-MM'); 
     send = f.node("Notify recipients", "httpRequest", http(
         "POST", f"{API}/reports/deliveries/{{{{ $('Request report').first().json.id }}}}/send",
         idem="=report-send-{{ $execution.id }}", body="={{ '{}' }}"),
-        credentials=CREDENTIAL, retryOnFail=True, maxTries=5, waitBetweenTries=10000)
+        credentials=f.credential, retryOnFail=True, maxTries=5, waitBetweenTries=10000)
     summarize = f.node("Summarize", "code", code("""
 const delivery = $input.first().json;
 return [{ json: {
@@ -524,16 +702,20 @@ return [{ json: {
 # --------------------------------------------------------------------------- E: health
 
 
-def automation_health() -> Flow:
+KEY_REJECTED_HINT = {
+    False: "Create or rotate it in Settings > Automation, then run scripts\\setup-n8n-automation.ps1",
+    True: "RightsFlow repairs the connection automatically within the hour; contact support if this persists",
+}
+
+
+def automation_health(managed: bool = False) -> Flow:
     f = Flow("automation-health", "RfWfHealthCheck1", "RightsFlow - E. Automation health check",
              "Hourly: n8n, the API, the database, the automation key (expiry levels), the outbox, runs and "
              "incidents. Healthy / warning / critical; alerts admins per issue set and fails loudly when it "
-             "cannot reach or authenticate to the API.")
-    manual, schedule = triggers(f, {"field": "hours", "hoursInterval": 1}, "Every hour")
-    cfg = f.node("Config", "code", config("automation-health", "Every hour",
-                                          "settings.n8nHealthUrl = '__RIGHTSFLOW_N8N_URL__/healthz';"))
-    f.link(manual, cfg)
-    f.link(schedule, cfg)
+             "cannot reach or authenticate to the API.", managed=managed)
+    cfg = entry(f, {"field": "hours", "hoursInterval": 1}, "Every hour",
+                "settings.n8nHealthUrl = '__RIGHTSFLOW_N8N_URL__/healthz';",
+                "settings.n8nHealthUrl = '__RF_N8N_HEALTH_URL__';")
     # neverError covers HTTP error statuses; continueRegularOutput also covers refused
     # connections, so an unreachable service is reported instead of failing the check.
     n8n = f.node("Check n8n", "httpRequest", http(
@@ -556,7 +738,7 @@ const add = (check, severity, detail) => checks.push({ check, severity, ok: seve
 add('n8n', n8n.statusCode === 200 ? 'healthy' : 'critical', n8n.statusCode ? `HTTP ${n8n.statusCode}` : 'unreachable');
 add('FastAPI', api.statusCode === 200 ? 'healthy' : 'critical', api.statusCode ? `HTTP ${api.statusCode}` : 'unreachable');
 if (auto.statusCode === 401 || auto.statusCode === 403) {
-  add('Automation key', 'critical', `rejected (HTTP ${auto.statusCode}: ${body.error?.code || 'unauthorized'}): the key is expired, revoked or invalid. Create or rotate it in Settings > Automation, then run scripts\\setup-n8n-automation.ps1`);
+  add('Automation key', 'critical', `rejected (HTTP ${auto.statusCode}: ${body.error?.code || 'unauthorized'}): the key is expired, revoked or invalid. %KEY_REJECTED_HINT%`);
 } else if (auto.statusCode === 409) {
   add('Automation key', 'critical', `bound to another n8n instance (${body.error?.code}): see docs/N8N_TROUBLESHOOTING.md`);
 } else if (auto.statusCode !== 200) {
@@ -582,7 +764,7 @@ return [{ json: {
   status: overall === 'healthy' ? 'succeeded' : 'partial',
   summary: { overall, problems: problems.map((c) => c.check), checks },
 } }];
-"""))
+""".replace("%KEY_REJECTED_HINT%", KEY_REJECTED_HINT[managed])))
     can_record = f.node("API reachable?", "if", if_true("={{ $json.canRecord }}"))
     record = start_run(f)
     finish = api_node(f, "Finish run", http(
@@ -614,18 +796,28 @@ throw new Error('Automation health CRITICAL:\\n' + $('Diagnose').first().json.re
 # --------------------------------------------------------------------------- error handler
 
 
-def error_handler() -> Flow:
+def error_handler(managed: bool = False) -> Flow:
     f = Flow("automation-error-handler", ERROR_WORKFLOW_ID, "RightsFlow - Automation error handler",
              "Error workflow for the RightsFlow workflows: marks the run failed and alerts admins "
-             "(once per failed execution).")
+             "(once per failed execution).", managed=managed)
     trigger = f.node("When a workflow fails", "errorTrigger", {}, x=0)
     f._x = 0
-    cfg = f.node("Config", "code", code("""
+    if managed:
+        cfg = f.node("Config", "code", code("""
+return [{ json: { apiBaseUrl: '__RF_API_URL__', instanceId: '__RF_INSTANCE_ID__' } }];
+"""))
+        # Managed names carry the organization ("RightsFlow [acme] - A. ..."); the
+        # incident key uses the plain workflow name, as in self-hosted mode.
+        name_expr = ("($('When a workflow fails').first().json.workflow.name || 'unknown')"
+                     ".replace(/^RightsFlow \\[[^\\]]*\\] - /, 'RightsFlow - ')")
+    else:
+        cfg = f.node("Config", "code", code("""
 return [{ json: { apiBaseUrl: '__RIGHTSFLOW_API_URL__', instanceId: '__RIGHTSFLOW_INSTANCE_ID__' } }];
 """))
+        name_expr = "($('When a workflow fails').first().json.workflow.name || 'unknown')"
     report = api_node(f, "Report failure", http(
         "POST", f"{API}/alerts", idem="=error-{{ $('When a workflow fails').first().json.execution.id }}",
-        body="={{ JSON.stringify({ workflow: ($('When a workflow fails').first().json.workflow.name || 'unknown')"
+        body="={{ JSON.stringify({ workflow: " + name_expr +
              ".toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 100), "
              "execution_id: String($('When a workflow fails').first().json.execution.id), "
              "error_code: 'workflow_failed', "
@@ -645,13 +837,37 @@ FLOWS = {
     "automation-error-handler.json": (error_handler, False),
 }
 
+# Managed templates, named by the backend's automation keys
+# (app/services/automation/catalog.py).
+MANAGED_FLOWS = {
+    "royalty_import.json": (royalty_import, True),
+    "contract_expiration.json": (contract_expiration, True),
+    "ai_metadata_review.json": (ai_review, True),
+    "monthly_reporting.json": (monthly_reporting, True),
+    "automation_health.json": (automation_health, True),
+    "error_handler.json": (error_handler, False),
+}
+
+
+def render_all() -> dict[Path, str]:
+    """Every generated file and its content (also used by the backend test that
+    checks the committed templates are current)."""
+    files: dict[Path, str] = {}
+    for filename, (build, uses_error_workflow) in FLOWS.items():
+        data = build().export(error_workflow=uses_error_workflow)
+        files[OUT / filename] = json.dumps(data, indent=2) + "\n"
+    for filename, (build, uses_error_workflow) in MANAGED_FLOWS.items():
+        data = build(managed=True).export(error_workflow=uses_error_workflow)
+        files[MANAGED_OUT / filename] = json.dumps(data, indent=2) + "\n"
+    return files
+
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    for filename, (build, uses_error_workflow) in FLOWS.items():
-        data = build().export(error_workflow=uses_error_workflow)
-        (OUT / filename).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        print(f"wrote {filename}: {len(data['nodes'])} nodes")
+    MANAGED_OUT.mkdir(parents=True, exist_ok=True)
+    for path, text in render_all().items():
+        path.write_text(text, encoding="utf-8")
+        print(f"wrote {path.relative_to(ROOT.parents[1])}: {len(json.loads(text)['nodes'])} nodes")
 
 
 if __name__ == "__main__":

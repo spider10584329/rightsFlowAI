@@ -131,6 +131,31 @@ class Settings(BaseSettings):
     # A bound n8n instance not seen for this long is reported as stale (N8N-07).
     automation_instance_stale_hours: int = 24
 
+    # How automation is connected:
+    # - "managed" (default, for deployments): the platform operates one n8n and
+    #   RightsFlow provisions each organization's workflows, keys and schedules
+    #   through n8n's public API. Organization admins only switch automations on
+    #   and off in Settings > Automation; they never handle keys or scripts.
+    # - "self_hosted": an operator connects a local n8n by hand with an
+    #   automation key and scripts/setup-n8n-automation.ps1 (development).
+    automation_mode: Literal["managed", "self_hosted"] = "managed"
+    # Platform n8n (managed mode). The API key is created in n8n under
+    # Settings > n8n API and never leaves the server.
+    n8n_api_url: str | None = None  # e.g. http://n8n.internal:5678/api/v1
+    n8n_api_key: str | None = None
+    # Defaults are derived from N8N_API_URL (<base>/webhook and <base>/healthz).
+    n8n_webhook_url: str | None = None
+    n8n_health_url: str | None = None
+    # The URL the platform n8n uses to reach this API (an internal address).
+    automation_api_url: str = "http://127.0.0.1:8000"
+    # Sent as X-Automation-Instance by every provisioned workflow.
+    n8n_instance_id: str = "rf-platform-n8n"
+    n8n_timeout_seconds: float = 15.0
+    # Keys RightsFlow issues for its own n8n are replaced automatically this many
+    # days before they expire.
+    automation_managed_key_lifetime_days: int = 180
+    automation_managed_rotate_before_days: int = 30
+
     # Error monitoring (e.g. a Sentry DSN). Optional integration point.
     error_monitoring_dsn: str | None = None
 
@@ -176,6 +201,23 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.storage_max_upload_mb * 1024 * 1024
+
+    @property
+    def n8n_configured(self) -> bool:
+        """Managed automation can provision workflows (platform n8n is set up)."""
+        return bool(self.n8n_api_url and self.n8n_api_key)
+
+    def _n8n_base_url(self) -> str:
+        base = (self.n8n_api_url or "").rstrip("/")
+        return base.removesuffix("/api/v1")
+
+    @property
+    def n8n_webhook_base_url(self) -> str:
+        return (self.n8n_webhook_url or f"{self._n8n_base_url()}/webhook").rstrip("/")
+
+    @property
+    def n8n_health_check_url(self) -> str:
+        return self.n8n_health_url or f"{self._n8n_base_url()}/healthz"
 
 
 @lru_cache

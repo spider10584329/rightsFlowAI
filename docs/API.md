@@ -12,7 +12,7 @@
 - Money and percentages are JSON strings (exact decimals).
 - Plan limits: **402** `plan_limit_exceeded`; AI not configured: **503** `ai_not_configured`.
 
-Total operations: **270**
+Total operations: **276**
 
 ## AI
 
@@ -99,12 +99,18 @@ Total operations: **270**
 | `GET` | `/api/v1/organizations/{organization_id}/automation/inbox-files` | List Inbox Files |
 | `GET` | `/api/v1/organizations/{organization_id}/automation/incidents` | List Incidents |
 | `POST` | `/api/v1/organizations/{organization_id}/automation/incidents/{incident_id}/resolve` | Resolve Incident |
+| `GET` | `/api/v1/organizations/{organization_id}/automation/managed` | Managed Overview |
+| `POST` | `/api/v1/organizations/{organization_id}/automation/managed/disable-all` | Disable All Automations |
+| `POST` | `/api/v1/organizations/{organization_id}/automation/managed/repair` | Repair Automation |
+| `PUT` | `/api/v1/organizations/{organization_id}/automation/managed/{automation}` | Update Managed Automation |
+| `POST` | `/api/v1/organizations/{organization_id}/automation/managed/{automation}/run` | Run Managed Automation |
 | `GET` | `/api/v1/organizations/{organization_id}/automation/overview` | Overview |
 | `POST` | `/api/v1/organizations/{organization_id}/automation/review-requests` | Request Review |
 | `GET` | `/api/v1/organizations/{organization_id}/automation/review-tasks` | List Review Tasks |
 | `POST` | `/api/v1/organizations/{organization_id}/automation/review-tasks/{task_id}/dismiss` | Dismiss Review Task |
 | `POST` | `/api/v1/organizations/{organization_id}/automation/review-tasks/{task_id}/resolve` | Resolve Review Task |
 | `GET` | `/api/v1/organizations/{organization_id}/automation/runs` | List Runs |
+| `GET` | `/api/v1/organizations/{organization_id}/automation/runs/{run_id}` | Run Detail |
 | `GET` | `/api/v1/organizations/{organization_id}/automation/scopes` | List Scopes |
 | `GET` | `/api/v1/organizations/{organization_id}/automation/statements` | List Statement States |
 | `POST` | `/api/v1/organizations/{organization_id}/automation/statements/{statement_id}/retry` | Retry Statement |

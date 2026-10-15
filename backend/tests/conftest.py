@@ -34,6 +34,11 @@ os.environ["RUN_EMBEDDED_WORKER"] = "false"
 os.environ["AI_PROVIDER"] = "none"
 os.environ["EMAIL_PROVIDER"] = "console"
 os.environ["BILLING_PROVIDER"] = "manual"
+# Most automation tests drive the API with hand-made keys (self-hosted mode);
+# tests/test_automation_managed.py switches to managed mode with a fake n8n.
+os.environ["AUTOMATION_MODE"] = "self_hosted"
+os.environ["N8N_API_URL"] = ""
+os.environ["N8N_API_KEY"] = ""
 os.environ.setdefault("LOG_LEVEL", "WARNING")
 
 

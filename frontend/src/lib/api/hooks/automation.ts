@@ -80,7 +80,125 @@ export interface CredentialCreateInput {
   expires_in_days?: number;
 }
 
+/**
+ * `managed`: RightsFlow runs n8n and provisions each organization's workflows;
+ * admins only switch automations on and off. `self_hosted`: an operator
+ * connects a local n8n with a hand-made key (development).
+ */
+export type AutomationMode = "managed" | "self_hosted";
+export type ManagedAutomationKey = "royalty_import" | "contract_expiration" | "ai_metadata_review" | "monthly_reporting";
+/** `pending` while RightsFlow sets the automation up (or removes it) in n8n. */
+export type ManagedAutomationStatus = "disabled" | "pending" | "active" | "error";
+export type AutomationConnectionStatus = "disabled" | "provisioning" | "active" | "error";
+
+export interface RoyaltyImportSettings {
+  process_on_upload: boolean;
+  interval_minutes: 15 | 30 | 60 | 120;
+}
+
+export interface ContractExpirationSettings {
+  thresholds: number[];
+  hour_utc: number;
+}
+
+export interface AIReviewSettings {
+  interval_minutes: 30 | 60 | 120 | 360;
+}
+
+export interface MonthlyReportingSettings {
+  report_type: string;
+  day_of_month: number;
+  hour_utc: number;
+}
+
+export interface ManagedAutomationSettingsMap {
+  royalty_import: RoyaltyImportSettings;
+  contract_expiration: ContractExpirationSettings;
+  ai_metadata_review: AIReviewSettings;
+  monthly_reporting: MonthlyReportingSettings;
+}
+
+/** backend/app/services/automation/managed.py `automation_payload`. */
+export interface ManagedAutomation {
+  key: ManagedAutomationKey;
+  label: string;
+  description: string;
+  enabled: boolean;
+  status: ManagedAutomationStatus;
+  settings: Record<string, unknown>;
+  schedule: { cron: string | null; description: string };
+  next_run_at: string | null;
+  last_run: AutomationRun | null;
+  last_error: string | null;
+  provisioned_at: string | null;
+  last_triggered_at: string | null;
+  updated_at: string;
+  can_run_now: boolean;
+}
+
+/** backend/app/services/automation/managed.py `overview`. */
+export interface ManagedAutomationOverview {
+  mode: AutomationMode;
+  /** Managed mode and the server's n8n is configured. */
+  available: boolean;
+  connection: {
+    status: AutomationConnectionStatus;
+    last_error: string | null;
+    last_reconciled_at: string | null;
+    /** The key RightsFlow issued for its n8n: only a hint, never the key. */
+    key: {
+      key_hint: string;
+      state: CredentialState;
+      expiry_level: CredentialExpiryLevel;
+      expires_at: string | null;
+      last_used_at: string | null;
+      scopes: string[];
+    } | null;
+  } | null;
+  automations: ManagedAutomation[];
+  /** Active keys someone created by hand (e.g. before managed mode). */
+  manual_keys: number;
+  report_types: { value: string; label: string }[];
+}
+
+export interface ManagedAutomationUpdateInput {
+  enabled?: boolean;
+  settings?: Partial<ManagedAutomationSettingsMap[ManagedAutomationKey]>;
+}
+
+export interface RunRequestResult {
+  automation: ManagedAutomationKey;
+  status: "requested";
+  requested_at: string;
+}
+
+/** backend/app/services/automation/records.py `delivery_payload`. */
+export interface AutomationDelivery {
+  id: string;
+  kind: string;
+  status: string;
+  subject_type: string | null;
+  subject_id: string | null;
+  job_id: string | null;
+  recipient_count: number;
+  detail: Record<string, unknown> | null;
+  sent_at: string | null;
+  created_at: string;
+}
+
+/** backend/app/services/automation/managed.py `run_detail`. */
+export interface AutomationRunDetail extends AutomationRun {
+  automation: ManagedAutomationKey | "automation_health" | "error_handler" | null;
+  outputs: {
+    statements: { id: string; source_name: string; status: string; period_start: string; period_end: string }[];
+    review_tasks: ReviewTask[];
+    deliveries: AutomationDelivery[];
+    files: { id: string; filename: string; size_bytes: number; created_at: string }[];
+  };
+}
+
 export interface AutomationOverview {
+  mode?: AutomationMode;
   active_credentials: number;
   /** Non-revoked keys at the `warning` or `critical` expiry level. */
   expiring_credentials?: number;
@@ -253,6 +371,8 @@ export const automationKeys = {
   statementsRoot: (orgId: string) => [...queryKeys.automation(orgId), "statements"] as const,
   statements: (orgId: string, params: StatementStateListParams) => [...queryKeys.automation(orgId), "statements", params] as const,
   inboxFiles: (orgId: string, params: InboxFileListParams) => [...queryKeys.automation(orgId), "inbox-files", params] as const,
+  managed: (orgId: string) => [...queryKeys.automation(orgId), "managed"] as const,
+  runDetail: (orgId: string, runId: string) => [...queryKeys.automation(orgId), "run", runId] as const,
 };
 
 const root = (orgId: string) => `/organizations/${encodeURIComponent(orgId)}/automation`;
@@ -260,6 +380,67 @@ const root = (orgId: string) => `/organizations/${encodeURIComponent(orgId)}/aut
 interface AdminQueryOptions {
   /** Admin-only endpoints: pass false for lower roles so no 403 is requested. */
   enabled?: boolean;
+}
+
+// ----------------------------------------------------------------- managed automations (admin)
+
+/** Polls while anything is being set up, so statuses settle without a reload. */
+export function useManagedAutomations(orgId: string, { enabled = true }: AdminQueryOptions = {}) {
+  return useQuery({
+    queryKey: automationKeys.managed(orgId),
+    queryFn: ({ signal }) => api.get<ManagedAutomationOverview>(`${root(orgId)}/managed`, { signal }),
+    enabled,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      const settling =
+        data.connection?.status === "provisioning" || data.automations.some((automation) => automation.status === "pending");
+      return settling ? 3000 : false;
+    },
+  });
+}
+
+export function useUpdateManagedAutomation(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ key, input }: { key: ManagedAutomationKey; input: ManagedAutomationUpdateInput }) =>
+      api.put<ManagedAutomation>(`${root(orgId)}/managed/${encodeURIComponent(key)}`, { body: input }),
+    onSettled: () => qc.invalidateQueries({ queryKey: automationKeys.all(orgId) }),
+  });
+}
+
+export function useRunManagedAutomation(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (key: ManagedAutomationKey) => api.post<RunRequestResult>(`${root(orgId)}/managed/${encodeURIComponent(key)}/run`),
+    onSettled: () => qc.invalidateQueries({ queryKey: automationKeys.managed(orgId) }),
+  });
+}
+
+export function useDisableAllAutomations(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<ManagedAutomationOverview>(`${root(orgId)}/managed/disable-all`),
+    onSettled: () => qc.invalidateQueries({ queryKey: automationKeys.all(orgId) }),
+  });
+}
+
+/** Ask RightsFlow to check and repair everything it set up in n8n now. */
+export function useRepairAutomation(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<ManagedAutomationOverview>(`${root(orgId)}/managed/repair`),
+    onSettled: () => qc.invalidateQueries({ queryKey: automationKeys.managed(orgId) }),
+  });
+}
+
+/** A run with links to what it produced. */
+export function useAutomationRunDetail(orgId: string, runId: string, { enabled = true }: AdminQueryOptions = {}) {
+  return useQuery({
+    queryKey: automationKeys.runDetail(orgId, runId),
+    queryFn: ({ signal }) => api.get<AutomationRunDetail>(`${root(orgId)}/runs/${encodeURIComponent(runId)}`, { signal }),
+    enabled,
+  });
 }
 
 // ----------------------------------------------------------------- credentials (admin)
