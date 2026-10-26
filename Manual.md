@@ -1485,11 +1485,15 @@ If you started things by hand, stop each one with Ctrl+C in its window.
 
 ### 15.2 Backups
 
+The complete database backup is `database/rightsflow_ai.sql` (schema + data, migration `c1120d7d8e4a`). It creates the `rightsflow_ai` database by itself, so it restores on another computer with `mysql -u root -p < database/rightsflow_ai.sql` or a phpMyAdmin import. `database/README.md` has the restore steps and the `.env` values to carry over (`JWT_SECRET_KEY`). The file is in `.gitignore` because it holds account data.
+
+To refresh it:
+
 ```powershell
-C:\xampp\mysql\bin\mysqldump.exe -u root --single-transaction rightsflow_ai > backup.sql
+C:\xampp\mysql\bin\mysqldump.exe -h127.0.0.1 -uroot --single-transaction --routines --triggers --events --hex-blob --default-character-set=utf8mb4 --skip-dump-date --databases rightsflow_ai > database\rightsflow_ai.sql
 ```
 
-- Pre-migration backups are in `backend/storage/backups/`.
+- The old per-migration dumps in `backend/storage/backups/` were replaced by this single file on 2026-10-16.
 - Uploaded files are in `backend/storage/files/` (local storage) and must be backed up together with the database.
 - n8n: stop n8n, then compress `%LOCALAPPDATA%\RightsFlowAI\n8n\data` and `secrets` together (data cannot be decrypted without secrets). Keep that archive as safe as a password.
 
@@ -1532,14 +1536,14 @@ To regenerate the API types: `backend\.venv\Scripts\python.exe scripts\export_op
 | Main organization | **RightsFlow Music Publishing** (slug `rightsflow-music-publishing`), plan Professional (Development) |
 | Main organization data | Only 3 parties; no works, recordings, statements or contracts → enter sample data before a demo (`docs/samples/sample-distributor-statement.csv` and its README) |
 | Owner account | `spider10584329@gmail.com` (changed from `admin@gmail.com` on 2026-10-15; email not yet verified) |
-| Cleaned up | Two empty "string" organizations deleted (backup: `backend/storage/backups/deleted_string_organizations_20261015T030901.json`) |
+| Cleaned up | Two empty "string" organizations deleted (backup: `backend/storage/backups/deleted_string_organizations_20261015T030901.json`). On 2026-10-16 all test data was removed: 80 E2E/QA/test organizations (including the manual test organization "aaa"), their users and their uploaded files, plus the 9 `rightsflow_*_test` databases. The database now holds 1 organization, 4 users (the owner and 3 automation service accounts) and the 4 plans |
 | AI | OpenAI `gpt-4o-mini`, connected ("Connected") |
 | Email | console mode (nothing is actually sent) |
 | Billing | manual (nothing is charged) |
-| Database | Latest migration `c1120d7d8e4a` (managed automation), 53 tables |
+| Database | Latest migration `c1120d7d8e4a` (managed automation), 53 tables. Full backup: `database/rightsflow_ai.sql` (15.2) |
 | Automation mode | `AUTOMATION_MODE` is not set in `backend/.env`, so the server runs in **managed** mode (the default). `N8N_API_URL` / `N8N_API_KEY` are not set yet, so the Automations tab says automation isn't set up on this server. To use the local n8n as the platform n8n: create an API key in n8n (Settings → n8n API) and set both values (10.13). To keep the old hand-made setup instead: `AUTOMATION_MODE=self_hosted` |
-| n8n operational instance | Installed and running. **Not yet connected to the real organization** (an old test organization's key remains and expires soon). The 5 business workflows are inactive; only the error handler is active. The 2 temporary diagnostic workflows remain |
-| Leftover test data | Test `n8n E2E …` organizations (archived) and `n8n-e2e-…@example.com` test users remain in the development database |
+| n8n operational instance | Installed and running. **Not yet connected to the real organization** (the old test organization's key was deleted with the test data on 2026-10-16). The 5 business workflows are inactive; only the error handler is active. The 2 temporary diagnostic workflows remain |
+| Leftover test data | None. Running the backend tests recreates `rightsflow_ai_test` automatically |
 
 ### 16.2 Limitations to tell the client up front
 
@@ -1666,6 +1670,7 @@ Every API error has the shape `{ "error": { "code", "message", "details" }, "req
 | `docs/FINAL_AUDIT_REPORT.md` | Pre-launch audit (verdict: ready for staging or a closed beta, not yet for public production) |
 | `docs/IMPLEMENTATION_REPORT.md`, `docs/IMPLEMENTATION_PROGRESS.md` | Implementation history (some items were later superseded) |
 | `docs/N8N_*.md` | n8n setup, architecture, workflows, security, test results, troubleshooting, audit, remaining work |
+| `database/rightsflow_ai.sql`, `database/README.md` | Complete database backup (not in git) and how to restore it on another computer |
 | `docs/samples/` | Sample statement and how to use it |
 | `automation/n8n/fixtures/` | Sample statements for n8n tests |
 

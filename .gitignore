@@ -32,3 +32,6 @@ Thumbs.db
 # Local storage
 backend/uploads/
 backend/storage/
+
+# Database backups (contain account data; copy them directly, never commit)
+database/*.sql
